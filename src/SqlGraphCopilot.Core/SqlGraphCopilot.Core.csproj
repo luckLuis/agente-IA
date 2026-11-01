@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>SqlGraphCopilot.Core</RootNamespace>
+    <!-- Empaquetable como NuGet: la misma base que usa el agente del core -->
+    <IsPackable>true</IsPackable>
+    <PackageId>SqlGraphCopilot.Core</PackageId>
+    <Description>Motor de grafo de dependencias SQL Server (SPs, tablas, vistas, instancias), carga on-demand y análisis de impacto para el agente IA.</Description>
+    <PackageTags>sqlserver;dependencies;graph;impact-analysis;ai-agent</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.SqlClient" />
+    <PackageReference Include="Microsoft.SqlServer.TransactSql.ScriptDom" />
+    <PackageReference Include="Microsoft.Extensions.Http" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="SqlGraphCopilot.Core.Tests" />
+  </ItemGroup>
+
+</Project>

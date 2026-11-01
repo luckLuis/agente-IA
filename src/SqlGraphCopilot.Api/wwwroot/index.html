@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SQL-Graph Copilot</title>
+  <meta name="description" content="Mapa y análisis de dependencias de SQL Server: instancias, bases, procedimientos, tablas y vistas.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='8' cy='16' r='4' fill='%2338bdf8'/%3E%3Ccircle cx='24' cy='8' r='4' fill='%23a78bfa'/%3E%3Ccircle cx='24' cy='24' r='4' fill='%23fb923c'/%3E%3Cpath d='M8 16L24 8M8 16L24 24' stroke='%2394a3b8' stroke-width='2'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/app.css">
+  <script src="lib/vis-network/vis-network.min.js" defer></script>
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <svg viewBox="0 0 32 32" aria-hidden="true" class="brand-mark">
+        <path d="M8 16L24 8M8 16L24 24M24 8L24 24" />
+        <circle cx="8" cy="16" r="4" class="n1" />
+        <circle cx="24" cy="8" r="4" class="n2" />
+        <circle cx="24" cy="24" r="4" class="n3" />
+      </svg>
+      <div>
+        <strong>SQL-Graph Copilot</strong>
+        <span>Red de dependencias SQL Server</span>
+      </div>
+    </div>
+
+    <form id="scope-form" class="scope" autocomplete="off">
+      <label>
+        <span>Instancia</span>
+        <select id="instance-select" required>
+          <option value="">Cargando…</option>
+        </select>
+      </label>
+      <label>
+        <span>Base de datos</span>
+        <select id="database-select" required disabled>
+          <option value="">Seleccione instancia</option>
+        </select>
+      </label>
+      <button type="submit" id="load-btn" class="btn primary" disabled>Cargar red</button>
+    </form>
+
+    <div id="index-status" class="index-status" hidden>
+      <span id="status-objects" class="pill"></span>
+      <span id="status-coverage" class="pill" title="Módulos con relaciones clasificadas (lee / escribe / ejecuta)"></span>
+      <button type="button" id="deep-scan-btn" class="btn ghost small" title="Clasifica todos los módulos de la base">Escaneo profundo</button>
+      <button type="button" id="refresh-btn" class="btn ghost small icon" title="Releer el catálogo" aria-label="Releer el catálogo">↻</button>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <aside class="sidebar" aria-label="Búsqueda y filtros">
+      <section class="card">
+        <h2>Buscar objeto</h2>
+        <input id="search-input" type="search" placeholder="sp_Nombre, dbo.Tabla…" disabled aria-label="Buscar objeto">
+        <div id="search-kinds" class="chip-row" role="group" aria-label="Filtrar búsqueda por tipo"></div>
+        <ul id="search-results" class="result-list" aria-live="polite"></ul>
+        <button type="button" id="search-more" class="btn ghost small block" hidden>Más resultados</button>
+      </section>
+
+      <section class="card">
+        <h2>Filtros de la red</h2>
+        <div id="kind-filters" class="toggle-list" role="group" aria-label="Tipos visibles"></div>
+
+        <label class="field">
+          <span>Saltos desde el foco <output id="hop-value">todos</output></span>
+          <input type="range" id="hop-range" min="1" max="6" value="6">
+        </label>
+        <label class="field">
+          <span>Dirección</span>
+          <select id="direction-select">
+            <option value="Both">Ambas</option>
+            <option value="Outgoing">Lo que usa</option>
+            <option value="Incoming">Quién lo usa</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Agrupar nodos</span>
+          <select id="cluster-select">
+            <option value="auto">Automático (más de 120 nodos)</option>
+            <option value="none">Sin agrupar</option>
+            <option value="schema">Por esquema</option>
+            <option value="database">Por base de datos</option>
+            <option value="instance">Por instancia</option>
+          </select>
+        </label>
+        <label class="switch">
+          <input type="checkbox" id="physics-toggle" checked>
+          <span>Animación de la red</span>
+        </label>
+      </section>
+
+      <section class="card legend">
+        <h2>Leyenda</h2>
+        <div id="legend-nodes" class="legend-grid"></div>
+        <div class="legend-edges">
+          <span><i class="edge e-writes"></i>Escribe</span>
+          <span><i class="edge e-reads"></i>Lee</span>
+          <span><i class="edge e-exec"></i>Ejecuta / llama</span>
+          <span><i class="edge e-ref"></i>Referencia (sin clasificar)</span>
+          <span><i class="edge e-bridge"></i>Puente a otra base / instancia</span>
+        </div>
+        <p class="hint">Borde rojo: crítico. Borde punteado: externo o inexistente. «＋»: tiene vecinos sin cargar (doble clic).</p>
+      </section>
+    </aside>
+
+    <section class="stage" aria-label="Red de dependencias">
+      <div class="stage-toolbar">
+        <div>
+          <h1 id="graph-title">Seleccione una instancia y una base</h1>
+          <span id="graph-counts" class="counts"></span>
+        </div>
+        <div class="tools">
+          <button type="button" id="hubs-btn" class="btn ghost small" disabled>Hubs</button>
+          <button type="button" id="fit-btn" class="btn ghost small" disabled>Ajustar</button>
+          <button type="button" id="clear-btn" class="btn ghost small" disabled>Limpiar</button>
+        </div>
+      </div>
+
+      <div id="network" class="network"></div>
+
+      <div id="empty-state" class="empty-state">
+        <div class="empty-art" aria-hidden="true">
+          <span></span><span></span><span></span><span></span><span></span>
+        </div>
+        <h2>Explore sin saturar</h2>
+        <ol>
+          <li>Elija <b>instancia</b> y <b>base</b>: solo se lee el catálogo de esa base.</li>
+          <li>Se muestran los objetos más referenciados (hubs).</li>
+          <li>Doble clic en un nodo para cargar sus vecinos; los externos se cargan bajo confirmación.</li>
+        </ol>
+      </div>
+
+      <div id="banner" class="banner" hidden></div>
+      <div id="loading" class="loading" hidden>
+        <div class="spinner" aria-hidden="true"></div>
+        <span id="loading-text">Cargando…</span>
+      </div>
+    </section>
+
+    <aside class="panel" aria-label="Detalle, análisis y copiloto">
+      <nav class="tabs" role="tablist">
+        <button type="button" role="tab" id="tab-btn-detail" data-tab="detail" aria-selected="true">Detalle</button>
+        <button type="button" role="tab" id="tab-btn-analysis" data-tab="analysis" aria-selected="false">Análisis</button>
+        <button type="button" role="tab" id="tab-btn-copilot" data-tab="copilot" aria-selected="false">Copiloto IA</button>
+      </nav>
+
+      <section id="tab-detail" class="tab-body" role="tabpanel">
+        <div id="detail-empty" class="muted-block">Seleccione un nodo de la red o un resultado de búsqueda.</div>
+        <div id="detail-content" hidden></div>
+        <div id="impact-content"></div>
+      </section>
+
+      <section id="tab-analysis" class="tab-body" role="tabpanel" hidden>
+        <div class="analysis-actions">
+          <button type="button" class="btn tile" data-analysis="overview"><b>Resumen</b><span>Diagnóstico general</span></button>
+          <button type="button" class="btn tile" data-analysis="spof"><b>Puntos únicos de fallo</b><span>Objetos que arrastran a muchos</span></button>
+          <button type="button" class="btn tile" data-analysis="coupling"><b>Acoplamiento</b><span>Fan-in / fan-out</span></button>
+          <button type="button" class="btn tile" data-analysis="redundancy"><b>Redundancias</b><span>SPs duplicados o casi iguales</span></button>
+          <button type="button" class="btn tile" data-analysis="bottlenecks"><b>Cuellos de botella</b><span>Escrituras, cadenas, ciclos</span></button>
+          <button type="button" class="btn tile" data-analysis="broken-references"><b>Referencias rotas</b><span>Objetos que no existen</span></button>
+        </div>
+        <div id="analysis-content" class="analysis-content"></div>
+      </section>
+
+      <section id="tab-copilot" class="tab-body chat" role="tabpanel" hidden>
+        <div id="chat-suggestions" class="chip-row suggestions"></div>
+        <div id="chat-log" class="chat-log" aria-live="polite">
+          <div class="msg system">Cargue una base y pregunte. Si selecciona un nodo, puede referirse a él como «este».</div>
+        </div>
+        <form id="chat-form" class="chat-form">
+          <textarea id="chat-input" rows="2" maxlength="2000" placeholder="¿Qué pasa si modifico dbo.Clientes?" disabled></textarea>
+          <button type="submit" class="btn primary" id="chat-send" disabled>Enviar</button>
+        </form>
+      </section>
+    </aside>
+  </main>
+
+  <dialog id="external-dialog" class="dialog">
+    <form method="dialog">
+      <h2 id="external-title">Cargar rama externa</h2>
+      <p id="external-body"></p>
+      <p id="external-error" class="error-text" hidden></p>
+      <menu>
+        <button value="cancel" class="btn ghost">Cancelar</button>
+        <button value="confirm" id="external-confirm" class="btn primary">Cargar solo esta rama</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+</body>
+</html>

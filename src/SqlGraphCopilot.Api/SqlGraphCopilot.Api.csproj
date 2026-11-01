@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <RootNamespace>SqlGraphCopilot.Api</RootNamespace>
+    <UserSecretsId>sqlgraphcopilot-api-6f1c2d8e</UserSecretsId>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Swashbuckle.AspNetCore" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SqlGraphCopilot.Core\SqlGraphCopilot.Core.csproj" />
+  </ItemGroup>
+
+</Project>
