@@ -100,8 +100,9 @@
           <span><i class="edge e-exec"></i>Ejecuta / llama</span>
           <span><i class="edge e-ref"></i>Referencia (sin clasificar)</span>
           <span><i class="edge e-bridge"></i>Puente a otra base / instancia</span>
+          <span><i class="edge e-sim"></i>Lógica similar (duplicados)</span>
         </div>
-        <p class="hint">Borde rojo: crítico. Borde punteado: externo o inexistente. «＋»: tiene vecinos sin cargar (doble clic).</p>
+        <p class="hint">Borde rojo: crítico. Borde punteado: externo o inexistente. «＋»: tiene vecinos sin cargar (doble clic). «≈»: tiene lógica similar a otro SP.</p>
       </section>
     </aside>
 
@@ -144,6 +145,7 @@
         <button type="button" role="tab" id="tab-btn-detail" data-tab="detail" aria-selected="true">Detalle</button>
         <button type="button" role="tab" id="tab-btn-analysis" data-tab="analysis" aria-selected="false">Análisis</button>
         <button type="button" role="tab" id="tab-btn-copilot" data-tab="copilot" aria-selected="false">Copiloto IA</button>
+        <button type="button" role="tab" id="tab-btn-stats" data-tab="stats" aria-selected="false">Estadísticas</button>
       </nav>
 
       <section id="tab-detail" class="tab-body" role="tabpanel">
@@ -173,6 +175,9 @@
           <textarea id="chat-input" rows="2" maxlength="2000" placeholder="¿Qué pasa si modifico dbo.Clientes?" disabled></textarea>
           <button type="submit" class="btn primary" id="chat-send" disabled>Enviar</button>
         </form>
+      </section>
+      <section id="tab-stats" class="tab-body" role="tabpanel" hidden>
+        <div id="stats-content"></div>
       </section>
     </aside>
   </main>

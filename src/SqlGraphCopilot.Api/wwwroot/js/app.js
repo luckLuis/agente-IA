@@ -1,6 +1,9 @@
 import { api } from './api.js';
 import { renderMarkdown, escapeHtml } from './markdown.js';
 import { GraphView, KIND_STYLE, kindLabel, kindColor } from './graph-view.js';
+import { fetchFlowInputs, mountInputsPanel, buildMigrationPrompt } from './flow-inputs.js';
+import { loadStatsPanel } from './stats.js';
+import { extractCSharpFiles, hasTests, verifyMigration, isGreen, renderVerifyReport, buildFixPrompt, MAX_AUTO_FIXES } from './migration-verify.js';
 
 // ---- Estado ------------------------------------------------------------------------------
 
@@ -72,6 +75,7 @@ const SUGGESTIONS = [
 ];
 
 let graph;
+let lastRedundancy = null;   // último informe de redundancias, para dibujar la similitud en la red
 
 // ---- Arranque ----------------------------------------------------------------------------
 
@@ -84,6 +88,11 @@ async function init() {
     onExpand: (id) => expandNode(id),
     onCountsChanged: updateCounts
   });
+
+  // Contenedor del panel «Datos de entrada» (bajo el informe de impacto).
+  el.inputsContent = document.createElement('div');
+  el.inputsContent.id = 'inputs-content';
+  el.impactContent.after(el.inputsContent);
 
   buildKindControls();
   buildSuggestions();
@@ -151,8 +160,15 @@ function wireEvents() {
     if (event.key === 'Escape' && !el.dialog.open) graph.clearHighlight();
   });
 
-  // Delegación: cualquier elemento con data-node-id enfoca ese nodo (resultados, tablas, listas).
   document.body.addEventListener('click', (event) => {
+    // Botones de la capa de similitud (panel de redundancias).
+    const sim = event.target.closest('[data-sim]');
+    if (sim) {
+      if (sim.dataset.sim === 'show') showSimilarity(); else hideSimilarity();
+      return;
+    }
+
+    // Delegación: cualquier elemento con data-node-id enfoca ese nodo (resultados, tablas, listas).
     const target = event.target.closest('[data-node-id]');
     if (target) focusNode(target.dataset.nodeId);
   });
@@ -192,6 +208,7 @@ async function loadScope() {
   state.instance = instance;
   state.database = database;
   state.selectedId = null;
+  lastRedundancy = null;
   saveScope();
 
   setLoading('Leyendo catálogo de la base… (la primera vez puede tardar unos segundos)');
@@ -242,7 +259,9 @@ async function runDeepScan() {
   const ok = window.confirm('El escaneo profundo lee y analiza TODAS las definiciones de la base (solo metadata). Puede tardar varios minutos en bases grandes. ¿Continuar?');
   if (!ok) return;
 
-  setLoading('Escaneo profundo en curso: clasificando lee / escribe / ejecuta…');
+  // Sin pantalla de carga: la red sigue visible y muestra ondas mientras el servidor clasifica.
+  showBanner('Escaneo profundo en curso: clasificando lee / escribe / ejecuta…', 'busy');
+  graph.startScan(null);
   el.deepScanBtn.disabled = true;
   try {
     const result = await api.deepScan(state.instance, state.database);
@@ -253,7 +272,8 @@ async function runDeepScan() {
     toast(error.message, 'error');
   } finally {
     el.deepScanBtn.disabled = false;
-    setLoading(null);
+    graph.stopScan();
+    showBanner(null);
   }
 }
 
@@ -337,6 +357,7 @@ function selectNode(id, { fromGraph = false } = {}) {
 
 function renderDetail(node) {
   el.impactContent.innerHTML = '';
+  el.inputsContent.innerHTML = '';
   if (!node) {
     el.detailEmpty.hidden = false;
     el.detailContent.hidden = true;
@@ -373,6 +394,8 @@ function renderDetail(node) {
       <button type="button" class="btn ghost small" data-action="expand1">Expandir 1 nivel</button>
       <button type="button" class="btn ghost small" data-action="expand2">Expandir 2 niveles</button>
       <button type="button" class="btn primary small" data-action="impact">Analizar impacto</button>
+      ${node.kind === 'StoredProcedure' ? '<button type="button" class="btn primary small" data-action="inputs">Datos de entrada</button>' : ''}
+      <button type="button" class="btn ghost small" data-action="flow">Trazar flujo</button>
       <button type="button" class="btn ghost small" data-action="focus">Usar como foco</button>
       <button type="button" class="btn ghost small" data-action="ask">Preguntar al copiloto</button>
       <button type="button" class="btn ghost small" data-action="explain">¿Qué hace?</button>
@@ -389,6 +412,8 @@ function onDetailAction(action, node) {
     case 'expand1': expandNode(node.id); break;
     case 'expand2': expandNode(node.id, { depth: 2 }); break;
     case 'impact': runImpact(node); break;
+    case 'flow': traceFlow(node); break;
+    case 'inputs': showInputs(node); break;
     case 'focus':
       graph.setFocus(node.id);
       toast(`Foco: ${node.schema}.${node.name}. Use "Saltos desde el foco" para filtrar.`);
@@ -409,19 +434,106 @@ function onDetailAction(action, node) {
       break;
     case 'migrate':
       switchTab('copilot');
-      sendChat('Migra este procedimiento a C# con Dapper manteniendo la lógica');
+      migrateToCSharp(node);
       break;
   }
 }
 
 async function runImpact(node) {
   el.impactContent.innerHTML = '<div class="muted-block">Calculando impacto…</div>';
+  // Mientras el servidor calcula, la red muestra ondas desde el objeto; al llegar el informe se marca por niveles.
+  graph.startScan([node.id], { direction: 'in' });
+  showBanner(`Analizando el impacto de ${node.schema}.${node.name}…`, 'busy');
   try {
     const report = await api.impact(node.id);
     renderImpact(report);
-    graph.highlight([report.targetId, ...report.affected.map((a) => a.nodeId)]);
+    graph.stopScan();
+    await graph.playTrace(impactLevels(report), { direction: 'both', onStep: traceBanner('Impacto') });
   } catch (error) {
     el.impactContent.innerHTML = `<div class="msg error">${escapeHtml(error.message)}</div>`;
+  } finally {
+    graph.stopScan();
+    showBanner(null);
+  }
+}
+
+/** Niveles del informe de impacto: [objeto analizado], [directos], [indirectos nivel 2], ... */
+function impactLevels(report) {
+  const levels = [[report.targetId]];
+  for (const affected of report.affected) {
+    (levels[affected.depth] ??= []).push(affected.nodeId);
+  }
+  return Array.from(levels, (ids) => ids ?? []);
+}
+
+function traceBanner(title) {
+  return ({ level, count }) => showBanner(
+    level === 0 ? `${title}: objeto de partida` : `${title} · nivel ${level}: ${count} objeto(s)`,
+    'busy');
+}
+
+/**
+ * Pide al copiloto la migración a C#: solo la lógica (sin SQL en el código; los datos siguen en el SP)
+ * y pruebas xUnit. Si el analizador responde, se adjuntan parámetros, ramas y validaciones reales.
+ */
+async function migrateToCSharp(node) {
+  switchTab('copilot');
+  sendChat(buildMigrationPrompt(node), { autoVerify: { attempt: 0 }, display: `Migra ${node.schema}.${node.name} a C#: solo la lógica (sin SQL en el código) y pruebas unitarias` });
+}
+
+/** Muestra los parámetros del SP y qué rama se ejecuta según los valores de entrada; «Marcar en la red» anima esa rama. */
+async function showInputs(node) {
+  el.inputsContent.innerHTML = '<div class="muted-block">Leyendo el código del procedimiento…</div>';
+  graph.startScan([node.id]);
+  try {
+    const report = await fetchFlowInputs({ instance: node.server, database: node.database, schema: node.schema, name: node.name });
+    graph.stopScan();
+    mountInputsPanel(el.inputsContent, report, {
+      escapeHtml,
+      database: node.database,
+      onPickTarget: (target) => {
+        const [id] = graph.findByName(target, node.database);
+        if (id) graph.select(id, { focus: true });
+        else toast(`${target} no está cargado en la red. Expanda el nodo para verlo.`);
+      },
+      onSimulate: (chosen, hasValues) => {
+        const ids = [];
+        let missing = 0;
+        for (const { branch } of chosen) {
+          if (branch.kind === 'dynamic') continue;
+          const [id] = graph.findByName(branch.target, node.database);
+          if (!id) missing++;
+          else if (id !== node.id && !ids.includes(id)) ids.push(id);
+        }
+        if (missing) toast(`${missing} destino(s) no están cargados en la red. Expanda el nodo para verlos.`);
+        if (ids.length === 0) { toast(hasValues ? 'Con esa entrada no se llega a ningún objeto cargado en la red.' : 'No hay destinos cargados en la red.'); return; }
+        graph.playTrace([[node.id], ids], { direction: 'out', onStep: traceBanner('Entrada') }).then(() => showBanner(null));
+      }
+    });
+  } catch (error) {
+    el.inputsContent.innerHTML = `<div class="msg error">${escapeHtml(error.message)}</div>`;
+  } finally {
+    graph.stopScan();
+  }
+}
+
+/** Anima el flujo de un SP hacia lo que usa (EXEC, lecturas y escrituras), cargando 3 niveles si hace falta. */
+async function traceFlow(node) {
+  graph.startScan([node.id]);
+  showBanner(`Siguiendo el flujo de ${node.schema}.${node.name}…`, 'busy');
+  try {
+    const subgraph = await api.neighborhood(node.id, 3, 'Outgoing');
+    graph.merge(subgraph, node.id);
+    showEmpty(false);
+    updateCounts();
+    graph.stopScan();
+    const played = await graph.traceFlow(node.id, { onStep: traceBanner('Flujo') });
+    if (!played) toast('Este objeto no llama ni usa otros objetos en la red cargada.');
+  } catch (error) {
+    toast(error.message, 'error');
+  } finally {
+    graph.stopScan();
+    showBanner(null);
   }
 }
 
@@ -510,11 +622,16 @@ const ANALYSIS_RENDERERS = {
   },
 
   redundancy(report) {
+    lastRedundancy = report;
     const duplicates = report.exactDuplicates.map((g) =>
       `<li>${g.names.map((n, i) => `<button type="button" class="row-btn" data-node-id="${escapeHtml(g.nodeIds[i] ?? '')}"><span class="name">${escapeHtml(n)}</span></button>`).join('')}</li>`).join('');
     const similar = report.similarProcedures.map((p) => row(p.firstId,
       `<td class="mono">${escapeHtml(p.firstName)}<br>↔ ${escapeHtml(p.secondName)}</td><td class="num">${Math.round(p.similarity * 100)}%</td><td class="num">${p.sharedDependencies}</td>`));
     return `
+      <div class="actions" style="margin-bottom:8px">
+        <button type="button" class="btn primary small" data-sim="show">Ver en la red</button>
+        <button type="button" class="btn ghost small" data-sim="clear">Quitar de la red</button>
+      </div>
       <h3 class="section-title">Definiciones idénticas</h3>
       ${duplicates ? `<ul class="item-list">${duplicates}</ul>` : '<div class="muted-block">Ninguna.</div>'}
       <h3 class="section-title">SPs con dependencias casi iguales</h3>
@@ -550,17 +667,73 @@ function hotspotTable(hotspots) {
     'Ninguna tabla con 2 o más escritores clasificados.');
 }
 
+// ---- Similitud de lógica (SPs duplicados o casi iguales) ------------------------------------
+
+/** Convierte el informe de redundancias en pares {a, b, similarity} para dibujarlos en la red. */
+function similarityPairs(report) {
+  const pairs = [];
+  for (const group of report.exactDuplicates) {
+    const ids = group.nodeIds.filter(Boolean);
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < ids.length; j++) {
+        pairs.push({ a: ids[i], b: ids[j], similarity: 1, exact: true });
+      }
+    }
+  }
+  for (const p of report.similarProcedures) {
+    pairs.push({ a: p.firstId, b: p.secondId, similarity: p.similarity, shared: p.sharedDependencies });
+  }
+  return pairs.slice(0, 60);
+}
+
+async function showSimilarity() {
+  if (!lastRedundancy) return;
+  const pairs = similarityPairs(lastRedundancy);
+  if (!pairs.length) { toast('No hay pares similares para mostrar.'); return; }
+
+  setLoading('Cargando los SPs similares…');
+  try {
+    const ids = [...new Set(pairs.flatMap((p) => [p.a, p.b]))];
+    const missing = ids.filter((id) => !graph.has(id)).slice(0, 12);
+    for (const id of missing) {
+      try {
+        graph.merge(await api.neighborhood(id, 1, 'Both'), null);
+      } catch { /* un objeto que no carga no impide mostrar el resto */ }
+    }
+    showEmpty(graph.size === 0);
+    updateCounts();
+    const drawn = graph.setSimilarity(pairs);
+    graph.highlight(ids);
+    graph.fit();
+    updateCounts();
+    toast(drawn ? `${drawn} par(es) con lógica similar dibujados en la red.` : 'Los SPs similares no se pudieron cargar en la red.', drawn ? 'ok' : 'error');
+  } finally {
+    setLoading(null);
+  }
+}
+
+function hideSimilarity() {
+  graph.clearSimilarity();
+  graph.clearHighlight();
+  updateCounts();
+}
+
 // ---- Copiloto -----------------------------------------------------------------------------
 
-async function sendChat(preset) {
+async function sendChat(preset, { display = null, autoVerify = null } = {}) {
   const message = (preset ?? el.chatInput.value).trim();
   if (!message || !state.instance || state.busy) return;
   if (!preset) el.chatInput.value = '';
 
-  addChatMessage('user', message);
+  addChatMessage('user', display ?? message);
   const pending = addChatMessage('bot', '<span class="typing"><i></i><i></i><i></i></span>', true);
+  let followUp = null;
   state.busy = true;
   el.chatSend.disabled = true;
+
+  // La red muestra que se está analizando: ondas desde el objeto seleccionado (o desde los hubs).
+  // Solo se marca el flujo del objeto; sin objeto seleccionado no hay nada que marcar.
+  if (state.selectedId && graph.has(state.selectedId)) graph.startScan([state.selectedId]);
 
   try {
     const response = await api.chat({
@@ -602,14 +775,78 @@ async function sendChat(preset) {
       foot.appendChild(show);
     }
     pending.appendChild(foot);
+
+    // Si la respuesta trae C# con pruebas xUnit, se ofrece validarlo (o se valida solo durante una migración).
+    const files = extractCSharpFiles([...pending.querySelectorAll('pre')].map((pre) => pre.innerText));
+    if (files.length && hasTests(files)) {
+      const verify = document.createElement('button');
+      verify.type = 'button';
+      verify.className = 'btn primary small';
+      verify.textContent = 'Validar código y pruebas';
+      verify.addEventListener('click', () => runVerification(pending, files, { attempt: 0, auto: false, button: verify }));
+      foot.appendChild(verify);
+      if (autoVerify) followUp = () => runVerification(pending, files, { attempt: autoVerify.attempt, auto: true, button: verify });
+    }
+
+    // Al llegar la respuesta, la red marca paso a paso los objetos que menciona.
+    graph.stopScan();
+    const present = (response.focusNodeIds ?? []).filter((id) => graph.has(id));
+    if (present.length) {
+      graph.traceIds(present, { onStep: traceBanner('Copiloto') }).then(() => showBanner(null));
+    }
   } catch (error) {
     pending.classList.add('error');
     pending.textContent = error.message;
   } finally {
+    graph.stopScan();
     state.busy = false;
     el.chatSend.disabled = false;
     el.chatLog.scrollTop = el.chatLog.scrollHeight;
   }
+  if (followUp) followUp();
+}
+
+/**
+ * Compila y ejecuta las pruebas del código generado. Con auto = true, si fallan, pide al copiloto que lo corrija
+ * y vuelve a validar (hasta MAX_AUTO_FIXES veces); es el ciclo generar → probar → corregir.
+ */
+async function runVerification(message, files, { attempt, auto, button }) {
+  let box = message.querySelector('.verify-box');
+  if (!box) {
+    box = document.createElement('div');
+    box.className = 'verify-box';
+    message.appendChild(box);
+  }
+  button.disabled = true;
+  box.innerHTML = `<div class="verify run">Compilando y ejecutando las pruebas… ${attempt ? `(corrección ${attempt})` : ''}</div>`;
+  el.chatLog.scrollTop = el.chatLog.scrollHeight;
+
+  try {
+    const report = await verifyMigration(files, attempt);
+    box.innerHTML = renderVerifyReport(report, escapeHtml);
+    button.disabled = false;
+    button.textContent = 'Validar de nuevo';
+
+    if (!isGreen(report)) {
+      const fix = document.createElement('button');
+      fix.type = 'button';
+      fix.className = 'btn ghost small';
+      fix.textContent = 'Pedir corrección al copiloto';
+      fix.addEventListener('click', () => sendChat(buildFixPrompt(report, attempt + 1), { display: 'Corrige el código según los errores de las pruebas', autoVerify: { attempt: attempt + 1 } }));
+      box.appendChild(fix);
+      if (auto && attempt < MAX_AUTO_FIXES) {
+        sendChat(buildFixPrompt(report, attempt + 1), { display: `Corrigiendo el código (intento ${attempt + 1} de ${MAX_AUTO_FIXES})…`, autoVerify: { attempt: attempt + 1 } });
+      } else if (auto) {
+        box.insertAdjacentHTML('beforeend', '<div class="verify-note">Se alcanzó el máximo de correcciones automáticas; revise los errores.</div>');
+      }
+    } else if (auto) {
+      toast('Código migrado y pruebas en verde.', 'ok');
+    }
+  } catch (error) {
+    box.innerHTML = `<div class="verify bad">${escapeHtml(error.message)}</div>`;
+    button.disabled = false;
+  }
+  el.chatLog.scrollTop = el.chatLog.scrollHeight;
 }
 
 /** Carga (si faltan) y resalta los nodos que menciona la respuesta. */
@@ -623,7 +860,7 @@ async function showInGraph(ids) {
   showEmpty(graph.size === 0);
   updateCounts();
   if (ids[0] && graph.has(ids[0])) graph.select(ids[0], { focus: true });
-  graph.highlight(ids);
+  graph.traceIds(ids, { onStep: traceBanner('Copiloto') }).then(() => showBanner(null));
 }
 
 function addChatMessage(kind, content, isHtml = false) {
@@ -755,7 +992,7 @@ function updateCounts() {
   if (!graph) return;
   const c = graph.counts();
   el.graphCounts.textContent = c.nodes
-    ? `${c.nodes} nodos · ${c.edges} relaciones${c.hidden ? ` · ${c.hidden} ocultos por filtros` : ''}${c.clusters ? ` · ${c.clusters} grupos` : ''}`
+    ? `${c.nodes} nodos · ${c.edges} relaciones${c.similar ? ` · ${c.similar} similares` : ''}${c.hidden ? ` · ${c.hidden} ocultos por filtros` : ''}${c.clusters ? ` · ${c.clusters} grupos` : ''}`
     : '';
 }
 
@@ -767,7 +1004,8 @@ function enableScopeControls(enabled) {
 
 function switchTab(tab) {
   document.querySelectorAll('.tabs button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
-  for (const name of ['detail', 'analysis', 'copilot']) $(`tab-${name}`).hidden = name !== tab;
+  for (const name of ['detail', 'analysis', 'copilot', 'stats']) $(`tab-${name}`).hidden = name !== tab;
+  if (tab === 'stats') loadStatsPanel($('stats-content'), escapeHtml);
 }
 
 function setLoading(text) {
@@ -777,8 +1015,9 @@ function setLoading(text) {
 
 function showEmpty(show) { el.emptyState.hidden = !show; }
 
-function showBanner(message) {
+function showBanner(message, kind = '') {
   el.banner.hidden = !message;
+  el.banner.className = kind ? `banner ${kind}` : 'banner';
   if (message) el.banner.textContent = message;
 }
 
