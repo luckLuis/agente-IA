@@ -11,6 +11,7 @@ WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
 // Motor completo (metadata real, índice, carga on-demand, análisis y agente). Sin mocks.
 builder.Services.AddSqlGraphCopilot(builder.Configuration);
+builder.Services.AddLoginValidation(builder.Configuration);                 // [LOGIN 1/4] NUEVA línea
 
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
@@ -55,11 +56,15 @@ else
 }
 
 app.UseHttpsRedirection();
+app.UseLoginValidation();                                                   // [LOGIN 2/4] NUEVA línea (ANTES de wwwroot)
 app.UseDefaultFiles();   // wwwroot/index.html (el HTML ya no vive en un string de C#)
 app.UseStaticFiles();
 
 RouteGroupBuilder api = app.MapGroup("/api");
+
 api.AddEndpointFilter<UsageEndpointFilter>();   // mide cada respuesta del copiloto
+api.MapAuthEndpoints();                                                     // [LOGIN 3/4] NUEVA línea
+
 api.MapCatalogEndpoints();
 api.MapGraphEndpoints();
 api.MapAnalysisEndpoints();
@@ -68,7 +73,9 @@ api.MapFlowEndpoints();
 api.MapMigrationEndpoints();
 api.MapUsageEndpoints();
 
-app.MapGet("/health", () => Results.Ok(new { status = "ok" })).ExcludeFromDescription();
+app.MapGet("/health", () => Results.Ok(new { status = "ok" }))
+    .AllowAnonymous()                                                       // [LOGIN 4/4] NUEVA línea
+    .ExcludeFromDescription();
 
 app.Run();
 
