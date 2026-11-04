@@ -43,6 +43,7 @@ internal sealed class TestEngine
             Indexes, Classifier, Impact, Structural,
             new IntentClassifier(), new EntityResolver(), new DeterministicNarrator(), new PromptBuilder(),
             llm ?? new DisabledLlmClient(),
+            catalog,
             NullLogger<SqlCopilotAgent>.Instance);
     }
 
