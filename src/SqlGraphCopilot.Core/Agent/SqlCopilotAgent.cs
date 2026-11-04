@@ -5,6 +5,7 @@ using SqlGraphCopilot.Core.Domain;
 using SqlGraphCopilot.Core.Graph;
 using SqlGraphCopilot.Core.Indexing;
 using SqlGraphCopilot.Core.Metadata;
+using SqlGraphCopilot.Core.Usage;
 
 namespace SqlGraphCopilot.Core.Agent;
 
@@ -12,6 +13,7 @@ namespace SqlGraphCopilot.Core.Agent;
 /// Orquestador del agente: Razonar (intención + objetos) → Actuar (análisis sobre el grafo real)
 /// → Observar (hechos estructurados) → Sintetizar (LLM si está configurado; si no, narrador determinista).
 /// Para ExplainLogic y MigrateToCode además lee el T-SQL real del objeto desde el catálogo.
+/// Ahorro de tokens: el grafo responde sin LLM cuando puede y las respuestas del LLM se guardan en caché por hash del prompt.
 /// </summary>
 public sealed class SqlCopilotAgent
 {
@@ -34,7 +36,9 @@ public sealed class SqlCopilotAgent
     private readonly ILlmClient _llm;
     private readonly ICatalogReader _catalog;
     private readonly ILogger<SqlCopilotAgent> _logger;
+    private readonly LlmResponseCache? _cache;
 
+    // La caché es opcional (último parámetro, null por defecto): TestEngine y otros constructores directos siguen compilando.
     public SqlCopilotAgent(
         IDatabaseIndexProvider indexes,
         DependencyClassifier classifier,
@@ -46,7 +50,8 @@ public sealed class SqlCopilotAgent
         PromptBuilder promptBuilder,
         ILlmClient llm,
         ICatalogReader catalog,
-        ILogger<SqlCopilotAgent> logger)
+        ILogger<SqlCopilotAgent> logger,
+        LlmResponseCache? cache = null)
     {
         _indexes = indexes;
         _classifier = classifier;
@@ -59,6 +64,7 @@ public sealed class SqlCopilotAgent
         _llm = llm;
         _catalog = catalog;
         _logger = logger;
+        _cache = cache;
     }
 
     public async Task<AgentResponse> AskAsync(AgentRequest request, CancellationToken cancellationToken)
@@ -102,10 +108,10 @@ public sealed class SqlCopilotAgent
         try
         {
             LlmPromptParts prompt = _promptBuilder.Build(request.Message, intent, index.Instance, index.Database, outcome.Facts);
-            string reply = await _llm.CompleteAsync(new LlmPrompt(prompt.System, prompt.User), cancellationToken);
+            (string reply, bool cached) = await CompleteAsync(prompt, request.Message, cancellationToken);
             if (!string.IsNullOrWhiteSpace(reply))
             {
-                return new AgentResponse(reply.Trim(), intent, outcome.FocusNodeIds, outcome.Facts, _llm.Name, outcome.Warnings);
+                return new AgentResponse(reply.Trim(), intent, outcome.FocusNodeIds, outcome.Facts, EngineName(cached), outcome.Warnings);
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
@@ -115,6 +121,40 @@ public sealed class SqlCopilotAgent
 
         string fallback = outcome.DeterministicReply + "\n\n_(Respuesta generada sin LLM: el proveedor no respondió.)_";
         return new AgentResponse(fallback, intent, outcome.FocusNodeIds, outcome.Facts, "deterministic-fallback", outcome.Warnings);
+    }
+
+    /// <summary>
+    /// Llama al LLM, o devuelve la respuesta guardada si el prompt (reglas + hechos + código + pregunta) es idéntico a uno anterior.
+    /// Las peticiones de regenerar ("de nuevo", "otra vez"...) saltan la caché.
+    /// </summary>
+    private async Task<(string Reply, bool Cached)> CompleteAsync(LlmPromptParts prompt, string question, CancellationToken cancellationToken)
+    {
+        string? key = _cache is null || WantsFreshAnswer(question) ? null : LlmResponseCache.KeyFor(prompt.System, prompt.User);
+
+        if (key is not null && _cache!.TryGet(key, out string? stored) && !string.IsNullOrWhiteSpace(stored))
+        {
+            _logger.LogInformation("[AGENTE] Respuesta servida desde la caché (sin llamar al LLM).");
+            if (UsageContext.Current is { } usage) usage.CacheHit = true;
+            return (stored, true);
+        }
+
+        string reply = await _llm.CompleteAsync(new LlmPrompt(prompt.System, prompt.User), cancellationToken);
+        if (key is not null && !string.IsNullOrWhiteSpace(reply))
+        {
+            _cache!.Set(key, reply);
+        }
+        return (reply, false);
+    }
+
+    private string EngineName(bool cached) => cached ? $"{_llm.Name} (caché)" : _llm.Name;
+
+    private static bool WantsFreshAnswer(string question)
+    {
+        string n = IntentClassifier.Normalize(question);
+        return n.Contains("de nuevo", StringComparison.Ordinal)
+            || n.Contains("otra vez", StringComparison.Ordinal)
+            || n.Contains("nuevamente", StringComparison.Ordinal)
+            || n.Contains("regener", StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -219,10 +259,10 @@ public sealed class SqlCopilotAgent
         {
             LlmPromptParts prompt = _promptBuilder.BuildCode(
                 question, intent, index.Instance, index.Database, target.DisplayName, definition, callees, facts);
-            string reply = await _llm.CompleteAsync(new LlmPrompt(prompt.System, prompt.User), cancellationToken);
+            (string reply, bool cached) = await CompleteAsync(prompt, question, cancellationToken);
             if (!string.IsNullOrWhiteSpace(reply))
             {
-                return new AgentResponse(reply.Trim(), intent, focus, facts, _llm.Name, warnings);
+                return new AgentResponse(reply.Trim(), intent, focus, facts, EngineName(cached), warnings);
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)

@@ -1,7 +1,11 @@
-using System.Text.Json.Serialization;
 using SqlGraphCopilot.Api.Endpoints;
 using SqlGraphCopilot.Api.Infrastructure;
+using SqlGraphCopilot.Core.Agent;
 using SqlGraphCopilot.Core.DependencyInjection;
+using SqlGraphCopilot.Core.Flow;
+using SqlGraphCopilot.Core.Migration;
+using SqlGraphCopilot.Core.Usage;
+using System.Text.Json.Serialization;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
@@ -19,6 +23,21 @@ builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<DomainExceptionHandler>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+// Datos de entrada de un SP (análisis de flujo)
+builder.Services.AddSingleton<ProcedureFlowService>();
+
+// Validación del código C# migrado (solo desarrollo)
+builder.Services.Configure<MigrationVerifierOptions>(builder.Configuration.GetSection("MigrationVerifier"));
+builder.Services.AddSingleton<MigrationVerifier>();
+
+// Estadísticas de uso (tokens, tiempo, ahorro, calidad)
+builder.Services.Configure<UsageOptions>(builder.Configuration.GetSection("Usage"));
+builder.Services.AddSingleton<UsageTracker>();
+
+// Caché de respuestas del LLM (mismo prompt = cero tokens)
+builder.Services.Configure<LlmResponseCacheOptions>(builder.Configuration.GetSection("LlmCache"));
+builder.Services.AddSingleton<LlmResponseCache>();
 
 WebApplication app = builder.Build();
 
@@ -42,11 +61,17 @@ app.UseDefaultFiles();   // wwwroot/index.html (el HTML ya no vive en un string 
 app.UseStaticFiles();
 
 RouteGroupBuilder api = app.MapGroup("/api");
+
+api.AddEndpointFilter<UsageEndpointFilter>();   // mide cada respuesta del copiloto
 api.MapAuthEndpoints();                                                     // [LOGIN 3/4] NUEVA línea
+
 api.MapCatalogEndpoints();
 api.MapGraphEndpoints();
 api.MapAnalysisEndpoints();
 api.MapCopilotEndpoints();
+api.MapFlowEndpoints();
+api.MapMigrationEndpoints();
+api.MapUsageEndpoints();
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }))
     .AllowAnonymous()                                                       // [LOGIN 4/4] NUEVA línea
