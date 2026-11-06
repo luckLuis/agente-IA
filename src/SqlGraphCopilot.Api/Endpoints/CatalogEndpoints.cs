@@ -1,9 +1,12 @@
 using Microsoft.AspNetCore.Mvc;
 using SqlGraphCopilot.Api.Contracts;
-using SqlGraphCopilot.Core.Domain;
-using SqlGraphCopilot.Core.Exploration;
-using SqlGraphCopilot.Core.Indexing;
-using SqlGraphCopilot.Core.Metadata;
+using SqlGraphCopilot.Application.Abstractions;
+using SqlGraphCopilot.Application.Catalog;
+using SqlGraphCopilot.Application.Exploration;
+using SqlGraphCopilot.Application.Indexing;
+using SqlGraphCopilot.Application.Settings;
+using SqlGraphCopilot.Domain;
+using SqlGraphCopilot.Domain.Indexing;
 
 namespace SqlGraphCopilot.Api.Endpoints;
 

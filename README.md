@@ -2,13 +2,13 @@
 
 Mapa y análisis de dependencias de SQL Server (instancias, bases, SPs, tablas, vistas, funciones, triggers, sinónimos y servidores vinculados) con carga bajo demanda y un agente IA que responde **"¿qué se rompe si modifico X?"**.
 
-Es la capa **"a nivel de SPs"** de la base común del agente del core: el motor (`SqlGraphCopilot.Core`) se empaqueta como NuGet y expone `ISqlGraphToolbox` para que otros agentes lo usen.
+Es la capa **"a nivel de SPs"** de la base común del agente del core: el motor (`SqlGraphCopilot.Domain` + `Application` + `Infrastructure`) se empaqueta como NuGet y expone `ISqlGraphToolbox` para que otros agentes lo usen.
 
 ```mermaid
 flowchart LR
     U["Usuario"] -->|"1. instancia + base"| W["Web (vis-network local)"]
     W -->|"2. fragmentos ≤ 250 nodos"| A["API .NET 8"]
-    A --> C["Core: índice por base · clasificador T-SQL · análisis · agente"]
+    A --> C["Application/Infrastructure: índice por base · clasificador T-SQL · análisis · agente"]
     C -->|"solo sys.* (metadata)"| S[("SQL Server")]
     C -.->|"opcional: hechos, nunca código"| L["LLM aprobado"]
 ```
@@ -20,9 +20,11 @@ Detalle completo en [docs/ARQUITECTURA.md](docs/ARQUITECTURA.md).
 ```
 SqlGraphCopilot/
 ├─ src/
-│  ├─ SqlGraphCopilot.Core/      Motor (NuGet): Domain · Graph · Parsing · Metadata · Indexing · Exploration · Analysis · Agent
-│  └─ SqlGraphCopilot.Api/       Minimal API + wwwroot (index.html, css, js, lib/vis-network)
-├─ tests/SqlGraphCopilot.Core.Tests/   xUnit (42 pruebas) con catálogo en memoria
+│  ├─ SqlGraphCopilot.Domain/          Grafo, ObjectKey, índice en memoria, excepciones (sin dependencias)
+│  ├─ SqlGraphCopilot.Application/     Casos de uso: índice · exploración · análisis · flujo · agente + puertos (interfaces)
+│  ├─ SqlGraphCopilot.Infrastructure/  SQL Server (catálogo) · ScriptDom · clientes LLM · uso · verificador · DI
+│  └─ SqlGraphCopilot.Api/             Minimal API + wwwroot (index.html, css, js, lib/vis-network)
+├─ tests/SqlGraphCopilot.Tests/        xUnit (42 pruebas) con catálogo en memoria
 ├─ sql/                          01 login solo lectura · 02 consultas de extracción · 03 verificación
 └─ docs/ARQUITECTURA.md
 ```
@@ -117,7 +119,9 @@ El LLM recibe **solo hechos** (nombres de objetos, relaciones y métricas). Nunc
 ## Como NuGet en otros proyectos
 
 ```bash
-dotnet pack src/SqlGraphCopilot.Core -c Release -o ./artifacts
+dotnet pack src/SqlGraphCopilot.Domain -c Release -o ./artifacts
+dotnet pack src/SqlGraphCopilot.Application -c Release -o ./artifacts
+dotnet pack src/SqlGraphCopilot.Infrastructure -c Release -o ./artifacts
 ```
 
 ```csharp

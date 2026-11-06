@@ -1,31 +1,28 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 17
-VisualStudioVersion = 17.0.31903.59
+# Visual Studio Version 18
+VisualStudioVersion = 18.11.12328.437 stable
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{3946C38E-C51E-4A28-9CDD-7C672B60AECA}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SqlGraphCopilot.Core", "src\SqlGraphCopilot.Core\SqlGraphCopilot.Core.csproj", "{6BBC5119-7379-4BBC-B409-72D62A58E43F}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SqlGraphCopilot.Api", "src\SqlGraphCopilot.Api\SqlGraphCopilot.Api.csproj", "{EB9A8DBD-B9B3-4EA2-8311-6B67A1769691}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{B4238274-56BD-474D-A8B1-1A820C4D3570}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SqlGraphCopilot.Core.Tests", "tests\SqlGraphCopilot.Core.Tests\SqlGraphCopilot.Core.Tests.csproj", "{D983F428-8E69-4A24-B108-AFCC394799CE}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SqlGraphCopilot.Tests", "tests\SqlGraphCopilot.Tests\SqlGraphCopilot.Tests.csproj", "{D983F428-8E69-4A24-B108-AFCC394799CE}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SqlGraphCopilot.Application", "src\SqlGraphCopilot.Application\SqlGraphCopilot.Application.csproj", "{DB16FE24-F988-41B4-B888-0EDD7AEB497A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SqlGraphCopilot.Domain", "src\SqlGraphCopilot.Domain\SqlGraphCopilot.Domain.csproj", "{CAE2C9A5-8C52-445B-BEDD-6CC283865714}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SqlGraphCopilot.Infrastructure", "src\SqlGraphCopilot.Infrastructure\SqlGraphCopilot.Infrastructure.csproj", "{E4A47EEC-A2B4-464C-834D-DF5E37C7B320}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
-	GlobalSection(SolutionProperties) = preSolution
-		HideSolutionNode = FALSE
-	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{6BBC5119-7379-4BBC-B409-72D62A58E43F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{6BBC5119-7379-4BBC-B409-72D62A58E43F}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{6BBC5119-7379-4BBC-B409-72D62A58E43F}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{6BBC5119-7379-4BBC-B409-72D62A58E43F}.Release|Any CPU.Build.0 = Release|Any CPU
 		{EB9A8DBD-B9B3-4EA2-8311-6B67A1769691}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{EB9A8DBD-B9B3-4EA2-8311-6B67A1769691}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{EB9A8DBD-B9B3-4EA2-8311-6B67A1769691}.Release|Any CPU.ActiveCfg = Release|Any CPU
@@ -34,10 +31,30 @@ Global
 		{D983F428-8E69-4A24-B108-AFCC394799CE}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D983F428-8E69-4A24-B108-AFCC394799CE}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{D983F428-8E69-4A24-B108-AFCC394799CE}.Release|Any CPU.Build.0 = Release|Any CPU
+		{DB16FE24-F988-41B4-B888-0EDD7AEB497A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{DB16FE24-F988-41B4-B888-0EDD7AEB497A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{DB16FE24-F988-41B4-B888-0EDD7AEB497A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{DB16FE24-F988-41B4-B888-0EDD7AEB497A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CAE2C9A5-8C52-445B-BEDD-6CC283865714}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CAE2C9A5-8C52-445B-BEDD-6CC283865714}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CAE2C9A5-8C52-445B-BEDD-6CC283865714}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CAE2C9A5-8C52-445B-BEDD-6CC283865714}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E4A47EEC-A2B4-464C-834D-DF5E37C7B320}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E4A47EEC-A2B4-464C-834D-DF5E37C7B320}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E4A47EEC-A2B4-464C-834D-DF5E37C7B320}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E4A47EEC-A2B4-464C-834D-DF5E37C7B320}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
-		{6BBC5119-7379-4BBC-B409-72D62A58E43F} = {3946C38E-C51E-4A28-9CDD-7C672B60AECA}
 		{EB9A8DBD-B9B3-4EA2-8311-6B67A1769691} = {3946C38E-C51E-4A28-9CDD-7C672B60AECA}
 		{D983F428-8E69-4A24-B108-AFCC394799CE} = {B4238274-56BD-474D-A8B1-1A820C4D3570}
+		{DB16FE24-F988-41B4-B888-0EDD7AEB497A} = {3946C38E-C51E-4A28-9CDD-7C672B60AECA}
+		{CAE2C9A5-8C52-445B-BEDD-6CC283865714} = {3946C38E-C51E-4A28-9CDD-7C672B60AECA}
+		{E4A47EEC-A2B4-464C-834D-DF5E37C7B320} = {3946C38E-C51E-4A28-9CDD-7C672B60AECA}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {7CAFC814-1B4B-4DD0-BBFB-E09D4941F61D}
 	EndGlobalSection
 EndGlobal

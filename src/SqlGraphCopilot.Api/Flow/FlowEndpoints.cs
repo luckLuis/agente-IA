@@ -1,4 +1,4 @@
-using SqlGraphCopilot.Core.Flow;
+using SqlGraphCopilot.Application.Flow;
 
 namespace SqlGraphCopilot.Api.Endpoints;
 

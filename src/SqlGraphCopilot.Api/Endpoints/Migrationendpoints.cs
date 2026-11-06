@@ -4,8 +4,9 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Hosting;
-using SqlGraphCopilot.Core.Migration;
-using SqlGraphCopilot.Core.Usage;
+using SqlGraphCopilot.Application.Abstractions;
+using SqlGraphCopilot.Application.Migration;
+using SqlGraphCopilot.Application.Usage;
 
 namespace SqlGraphCopilot.Api.Endpoints;
 
@@ -19,8 +20,8 @@ public static class MigrationEndpoints
     {
         api.MapPost("/migration/verify", async (
             VerifyRequest request,
-            MigrationVerifier verifier,
-            UsageTracker usage,
+            IMigrationVerifier verifier,
+            IUsageTracker usage,
             IWebHostEnvironment environment,
             CancellationToken cancellationToken) =>
         {

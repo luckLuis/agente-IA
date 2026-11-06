@@ -3,7 +3,8 @@ using System.Text;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
-using SqlGraphCopilot.Core.Usage;
+using SqlGraphCopilot.Application.Abstractions;
+using SqlGraphCopilot.Application.Usage;
 
 namespace SqlGraphCopilot.Api.Endpoints;
 
@@ -12,9 +13,9 @@ public static class UsageEndpoints
     /// <summary>GET /api/stats · GET /api/stats/export.csv · POST /api/stats/reset (sobre el grupo "/api").</summary>
     public static RouteGroupBuilder MapUsageEndpoints(this RouteGroupBuilder api)
     {
-        api.MapGet("/stats", (UsageTracker tracker) => Results.Ok(tracker.Snapshot()));
+        api.MapGet("/stats", (IUsageTracker tracker) => Results.Ok(tracker.Snapshot()));
 
-        api.MapGet("/stats/export.csv", (UsageTracker tracker) =>
+        api.MapGet("/stats/export.csv", (IUsageTracker tracker) =>
         {
             StringBuilder csv = new();
             csv.AppendLine("fecha_utc,intencion,motor,latencia_ms,tokens_entrada,tokens_salida,estimado,tokens_ahorrados_minify,tokens_ahorrados_sin_llm,cache,minutos_manuales");
@@ -26,7 +27,7 @@ public static class UsageEndpoints
             return Results.File(Encoding.UTF8.GetBytes(csv.ToString()), "text/csv", "sqlgraphcopilot-uso.csv");
         });
 
-        api.MapPost("/stats/reset", (UsageTracker tracker) =>
+        api.MapPost("/stats/reset", (IUsageTracker tracker) =>
         {
             tracker.Reset();
             return Results.NoContent();
@@ -42,9 +43,9 @@ public static class UsageEndpoints
 /// </summary>
 public sealed class UsageEndpointFilter : IEndpointFilter
 {
-    private readonly UsageTracker _tracker;
+    private readonly IUsageTracker _tracker;
 
-    public UsageEndpointFilter(UsageTracker tracker)
+    public UsageEndpointFilter(IUsageTracker tracker)
     {
         _tracker = tracker;
     }

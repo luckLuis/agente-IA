@@ -1,16 +1,14 @@
-using SqlGraphCopilot.Api.Endpoints;
-using SqlGraphCopilot.Api.Infrastructure;
-using SqlGraphCopilot.Core.Agent;
-using SqlGraphCopilot.Core.DependencyInjection;
-using SqlGraphCopilot.Core.Flow;
-using SqlGraphCopilot.Core.Migration;
-using SqlGraphCopilot.Core.Usage;
 using System.Text.Json.Serialization;
+using SqlGraphCopilot.Api.Endpoints;
+using SqlGraphCopilot.Api.Http;
+using SqlGraphCopilot.Application.DependencyInjection;
+using SqlGraphCopilot.Infrastructure.DependencyInjection;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
-// Motor completo (metadata real, índice, carga on-demand, análisis y agente). Sin mocks.
-builder.Services.AddSqlGraphCopilot(builder.Configuration);
+// Composition root: Application (casos de uso, agente, flujo, caché) + Infrastructure (SQL Server, ScriptDom, LLM, uso, verificador).
+builder.Services.AddApplication();
+builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddLoginValidation(builder.Configuration);                 // [LOGIN 1/4] NUEVA línea
 
 builder.Services.ConfigureHttpJsonOptions(options =>
@@ -24,20 +22,7 @@ builder.Services.AddExceptionHandler<DomainExceptionHandler>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// Datos de entrada de un SP (análisis de flujo)
-builder.Services.AddSingleton<ProcedureFlowService>();
-
-// Validación del código C# migrado (solo desarrollo)
-builder.Services.Configure<MigrationVerifierOptions>(builder.Configuration.GetSection("MigrationVerifier"));
-builder.Services.AddSingleton<MigrationVerifier>();
-
-// Estadísticas de uso (tokens, tiempo, ahorro, calidad)
-builder.Services.Configure<UsageOptions>(builder.Configuration.GetSection("Usage"));
-builder.Services.AddSingleton<UsageTracker>();
-
-// Caché de respuestas del LLM (mismo prompt = cero tokens)
-builder.Services.Configure<LlmResponseCacheOptions>(builder.Configuration.GetSection("LlmCache"));
-builder.Services.AddSingleton<LlmResponseCache>();
+// Flujo de SP, verificador de migración, estadísticas de uso y caché del LLM: registrados en AddApplication()/AddInfrastructure().
 
 WebApplication app = builder.Build();
 

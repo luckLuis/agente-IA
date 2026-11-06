@@ -2,7 +2,9 @@
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 COPY Directory.Build.props Directory.Packages.props ./
-COPY src/SqlGraphCopilot.Core/SqlGraphCopilot.Core.csproj src/SqlGraphCopilot.Core/
+COPY src/SqlGraphCopilot.Domain/SqlGraphCopilot.Domain.csproj src/SqlGraphCopilot.Domain/
+COPY src/SqlGraphCopilot.Application/SqlGraphCopilot.Application.csproj src/SqlGraphCopilot.Application/
+COPY src/SqlGraphCopilot.Infrastructure/SqlGraphCopilot.Infrastructure.csproj src/SqlGraphCopilot.Infrastructure/
 COPY src/SqlGraphCopilot.Api/SqlGraphCopilot.Api.csproj src/SqlGraphCopilot.Api/
 RUN dotnet restore src/SqlGraphCopilot.Api/SqlGraphCopilot.Api.csproj
 COPY src/ src/
