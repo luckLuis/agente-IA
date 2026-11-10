@@ -1,0 +1,236 @@
+/* Escenario del grafo (red neuronal): fondo, barra de herramientas, lienzo, estado vacío, carga y banner. */
+.stage {
+  position: relative;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(0, 229, 255, .18);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: radial-gradient(ellipse at center, rgba(18, 75, 125, .18), transparent 60%), linear-gradient(145deg, #030a1b, #050c22);
+  box-shadow: inset 0 0 70px rgba(0, 100, 255, .08), 0 0 30px rgba(0, 150, 255, .04);
+}
+  /* Rejilla de puntos con viñeta */
+  .stage::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: .3;
+    background-image: radial-gradient(rgba(0, 229, 255, .6) .7px, transparent .7px);
+    background-size: 27px 27px;
+    mask-image: radial-gradient(ellipse at center, black, transparent 80%);
+  }
+  /* Línea de escaneo */
+  .stage::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 2px;
+    z-index: 1;
+    pointer-events: none;
+    background: linear-gradient(90deg, transparent, rgba(0, 229, 255, .22), transparent);
+    box-shadow: 0 0 15px rgba(0, 229, 255, .25);
+    animation: scan 9s linear infinite;
+  }
+
+@keyframes scan {
+  from {
+    top: 0;
+  }
+
+  to {
+    top: 100%;
+  }
+}
+
+/* ---------- Barra de herramientas ---------- */
+.stage-toolbar {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(7, 11, 22, .6);
+  z-index: 2;
+}
+
+  .stage-toolbar h1 {
+    font-size: 15px;
+  }
+
+.counts {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.tools {
+  display: flex;
+  gap: 6px;
+}
+
+/* ---------- Lienzo y tooltip de vis-network ---------- */
+.network {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  min-height: 0;
+}
+
+  .network:focus {
+    outline: none;
+  }
+
+div.vis-tooltip {
+  background: var(--surface) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--line-2) !important;
+  border-radius: 8px !important;
+  padding: 8px 10px !important;
+  font: 12px/1.4 var(--font) !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .5) !important;
+  max-width: 340px;
+  white-space: normal !important;
+}
+
+.tip-title {
+  font-family: var(--mono);
+  font-weight: 600;
+  margin-bottom: 4px;
+  word-break: break-all;
+}
+
+.tip-row {
+  color: var(--text-2);
+}
+
+/* ---------- Estado vacío ---------- */
+.empty-state {
+  position: absolute;
+  inset: 52px 0 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--text-2);
+  pointer-events: none;
+  text-align: center;
+  padding: 20px;
+}
+
+  .empty-state h2 {
+    font-size: 18px;
+    color: var(--text);
+  }
+
+  .empty-state ol {
+    text-align: left;
+    max-width: 430px;
+    color: var(--text-2);
+    line-height: 1.7;
+  }
+
+.empty-art {
+  position: relative;
+  width: 120px;
+  height: 70px;
+}
+
+  .empty-art span {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    animation: pulse 2.4s infinite ease-in-out;
+  }
+
+    .empty-art span:nth-child(1) {
+      left: 0;
+      top: 30px;
+      background: var(--k-table);
+    }
+
+    .empty-art span:nth-child(2) {
+      left: 40px;
+      top: 4px;
+      background: var(--k-proc);
+      animation-delay: .3s;
+    }
+
+    .empty-art span:nth-child(3) {
+      left: 44px;
+      top: 54px;
+      background: var(--k-view);
+      animation-delay: .6s;
+    }
+
+    .empty-art span:nth-child(4) {
+      left: 86px;
+      top: 22px;
+      background: var(--k-external);
+      animation-delay: .9s;
+    }
+
+    .empty-art span:nth-child(5) {
+      left: 108px;
+      top: 50px;
+      background: var(--k-func);
+      animation-delay: 1.2s;
+    }
+
+/* ---------- Carga ---------- */
+.loading {
+  position: absolute;
+  inset: 52px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgba(3, 8, 22, .7);
+  color: var(--text-2);
+  z-index: 3;
+}
+
+.spinner {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 3px solid var(--line-2);
+  border-top-color: var(--accent);
+  animation: spin .8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---------- Banner ---------- */
+.banner {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 14px;
+  z-index: 2;
+  padding: 9px 12px;
+  border-radius: 9px;
+  font-size: 12px;
+  background: rgba(245, 158, 11, .12);
+  border: 1px solid rgba(245, 158, 11, .35);
+  color: #fcd34d;
+}
+
+  /* Banner de progreso del análisis (la red se anima mientras tanto) */
+  .banner.busy {
+    background: rgba(0, 229, 255, .1);
+    border-color: rgba(0, 229, 255, .35);
+    color: #67e8f9;
+  }

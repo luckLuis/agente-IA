@@ -1,0 +1,200 @@
+/* Panel derecho: pestañas y pestaña de detalle (cabecera, métricas, acciones, riesgo e impacto). */
+.panel {
+  padding: 0;
+  overflow: hidden;
+}
+
+/* ---------- Pestañas ---------- */
+.tabs {
+  display: flex;
+  border-bottom: 1px solid var(--line);
+  flex: none;
+}
+
+  .tabs button {
+    flex: 1;
+    padding: 11px 6px;
+    background: transparent;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    color: var(--text-2);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+    .tabs button[aria-selected="true"] {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+
+.tab-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 14px;
+}
+
+/* ---------- Detalle de un objeto ---------- */
+.detail-head {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+  .detail-head .dot {
+    width: 12px;
+    height: 12px;
+    margin-top: 5px;
+  }
+
+.detail-name {
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.detail-sub {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 8px 0 12px;
+}
+
+.metric {
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 8px 10px;
+}
+
+  .metric b {
+    display: block;
+    font-size: 18px;
+  }
+
+  .metric span {
+    font-size: 11px;
+    color: var(--text-3);
+  }
+
+.actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.section-title {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--text-2);
+  margin: 16px 0 8px;
+}
+
+/* ---------- Riesgo e impacto ---------- */
+.risk {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 0 10px;
+}
+
+.risk-badge {
+  font-weight: 700;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 7px;
+}
+
+.risk-Low {
+  background: rgba(52, 211, 153, .15);
+  color: var(--ok);
+}
+
+.risk-Medium {
+  background: rgba(250, 204, 21, .15);
+  color: #fde047;
+}
+
+.risk-High {
+  background: rgba(249, 115, 22, .18);
+  color: #fdba74;
+}
+
+.risk-Critical {
+  background: rgba(244, 63, 94, .18);
+  color: #fda4af;
+}
+
+.bar {
+  flex: 1;
+  height: 8px;
+  border-radius: 99px;
+  background: var(--bg-2);
+  overflow: hidden;
+  border: 1px solid var(--line);
+}
+
+  .bar > i {
+    display: block;
+    height: 100%;
+    background: linear-gradient(90deg, var(--ok), var(--warn), var(--danger));
+  }
+
+.item-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+  .item-list li button, .row-btn {
+    width: 100%;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    background: transparent;
+    border: 0;
+    color: var(--text);
+    text-align: left;
+    font: inherit;
+    font-size: 12px;
+    padding: 5px 6px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+
+    .item-list li button:hover, .row-btn:hover {
+      background: var(--surface-2);
+    }
+
+  .item-list .name {
+    flex: 1;
+    min-width: 0;
+    font-family: var(--mono);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .item-list .meta {
+    color: var(--text-3);
+    font-size: 11px;
+    white-space: nowrap;
+  }
+
+.warn-list {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: #fcd34d;
+  font-size: 12px;
+}

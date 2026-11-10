@@ -1,0 +1,86 @@
+/* SQL-Graph Copilot — base: tokens de diseño, reset y animaciones compartidas. */
+:root {
+  --bg: #070b16;
+  --bg-2: #0b1120;
+  --surface: #0f172a;
+  --surface-2: #131c33;
+  --line: #1e293b;
+  --line-2: #2a3754;
+  --text: #e2e8f0;
+  --text-2: #94a3b8;
+  --text-3: #64748b;
+  --accent: #22d3ee;
+  --accent-2: #0e7490;
+  --danger: #f43f5e;
+  --warn: #f59e0b;
+  --ok: #34d399;
+  --k-table: #38bdf8;
+  --k-view: #2dd4bf;
+  --k-proc: #a78bfa;
+  --k-func: #f472b6;
+  --k-trigger: #a3e635;
+  --k-synonym: #94a3b8;
+  --k-external: #fb923c;
+  --k-linked: #f97316;
+  --k-missing: #64748b;
+  --e-writes: #fb7185;
+  --e-reads: #7dd3fc;
+  --e-exec: #a78bfa;
+  --e-ref: #475569;
+  --e-bridge: #f59e0b;
+  --radius: 12px;
+  --font: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --mono: "Cascadia Code", "JetBrains Mono", Consolas, ui-monospace, monospace;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font: 14px/1.45 var(--font);
+  color: var(--text);
+  background: radial-gradient(1200px 600px at 70% -10%, rgba(34, 211, 238, .08), transparent 60%), radial-gradient(900px 500px at -10% 110%, rgba(167, 139, 250, .07), transparent 60%), var(--bg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+h1, h2 {
+  margin: 0;
+  font-weight: 600;
+  letter-spacing: -.01em;
+}
+
+code {
+  font-family: var(--mono);
+  font-size: .9em;
+  background: rgba(148, 163, 184, .12);
+  padding: .05em .35em;
+  border-radius: 5px;
+  color: #f1f5f9;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+/* Animación compartida (escenario vacío e indicador "escribiendo" del chat). */
+@keyframes pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: .6;
+    box-shadow: 0 0 0 0 currentColor;
+  }
+
+  50% {
+    transform: scale(1.35);
+    opacity: 1;
+  }
+}

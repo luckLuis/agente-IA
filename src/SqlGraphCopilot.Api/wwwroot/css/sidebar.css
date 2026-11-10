@@ -1,0 +1,144 @@
+/* Columna izquierda: búsqueda de objetos, filtros de la red y leyenda. */
+
+/* ---------- Búsqueda ---------- */
+#search-input {
+  width: 100%;
+}
+
+.result-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 300px;
+  overflow: auto;
+}
+
+  .result-list button {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    text-align: left;
+    background: transparent;
+    border: 0;
+    color: var(--text);
+    padding: 6px 8px;
+    border-radius: 7px;
+    cursor: pointer;
+    font: inherit;
+  }
+
+    .result-list button:hover {
+      background: var(--surface-2);
+    }
+
+  .result-list .name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+
+  .result-list .meta {
+    font-size: 11px;
+    color: var(--text-3);
+  }
+
+/* ---------- Filtros ---------- */
+.toggle-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 8px;
+}
+
+  .toggle-list label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-2);
+    cursor: pointer;
+  }
+
+  .toggle-list input {
+    accent-color: var(--accent);
+  }
+
+/* ---------- Leyenda ---------- */
+.legend-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 8px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+  .legend-grid span {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+
+  .legend-grid svg {
+    width: 14px;
+    height: 14px;
+    flex: none;
+    filter: drop-shadow(0 0 3px rgba(34, 211, 238, .55));
+  }
+
+.legend-edges {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+  .legend-edges span {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+.edge {
+  width: 26px;
+  height: 0;
+  border-top: 2px solid;
+  display: inline-block;
+}
+
+.e-writes {
+  border-color: var(--e-writes);
+}
+
+.e-reads {
+  border-color: var(--e-reads);
+}
+
+.e-exec {
+  border-color: var(--e-exec);
+}
+
+.e-ref {
+  border-color: var(--e-ref);
+  border-top-style: dashed;
+}
+
+.e-bridge {
+  border-color: var(--e-bridge);
+  border-top-style: dashed;
+  border-top-width: 3px;
+}
+
+.e-sim {
+  border-color: #e879f9;
+  border-top-style: dotted;
+  border-top-width: 3px;
+}

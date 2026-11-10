@@ -1,0 +1,72 @@
+/* Pestaña Análisis: mosaico de acciones y tablas de resultados. */
+.analysis-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.btn.tile {
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px;
+  border-color: var(--line-2);
+  background: var(--bg-2);
+  font-weight: 500;
+}
+
+  .btn.tile b {
+    font-size: 13px;
+  }
+
+  .btn.tile span {
+    font-size: 11px;
+    color: var(--text-3);
+  }
+
+  .btn.tile.active {
+    border-color: var(--accent);
+  }
+
+.analysis-content {
+  margin-top: 14px;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+  .data-table th {
+    text-align: left;
+    color: var(--text-3);
+    font-weight: 600;
+    padding: 6px;
+    border-bottom: 1px solid var(--line-2);
+  }
+
+  .data-table td {
+    padding: 6px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+
+    .data-table td.num, .data-table th.num {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+  .data-table tr.clickable {
+    cursor: pointer;
+  }
+
+    .data-table tr.clickable:hover td {
+      background: var(--surface-2);
+    }
+
+  .data-table .mono {
+    font-family: var(--mono);
+    word-break: break-all;
+  }
