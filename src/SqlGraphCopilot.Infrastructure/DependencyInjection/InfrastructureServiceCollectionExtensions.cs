@@ -1,3 +1,5 @@
+using Azure.Core;
+using Azure.Identity;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -56,6 +58,7 @@ public static class InfrastructureServiceCollectionExtensions
             // El timeout real lo controla LlmHttp con LlmOptions.TimeoutSeconds.
             client.Timeout = Timeout.InfiniteTimeSpan;
         });
+        services.TryAddSingleton<TokenCredential>(_ => new DefaultAzureCredential());
         services.TryAddSingleton<ILlmClient>(sp =>
         {
             LlmOptions llm = sp.GetRequiredService<IOptions<LlmOptions>>().Value;
@@ -63,6 +66,7 @@ public static class InfrastructureServiceCollectionExtensions
             {
                 LlmProvider.OpenAICompatible => ActivatorUtilities.CreateInstance<OpenAiCompatibleLlmClient>(sp),
                 LlmProvider.Anthropic => ActivatorUtilities.CreateInstance<AnthropicLlmClient>(sp),
+                LlmProvider.FoundryAgent => ActivatorUtilities.CreateInstance<FoundryAgentLlmClient>(sp),
                 _ => new DisabledLlmClient()
             };
         });

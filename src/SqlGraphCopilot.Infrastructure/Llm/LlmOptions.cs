@@ -9,7 +9,9 @@ public enum LlmProvider
     OpenAICompatible,
 
     /// <summary>Claude (Anthropic Messages API).</summary>
-    Anthropic
+    Anthropic,
+
+    FoundryAgent
 }
 
 public sealed class LlmOptions
@@ -43,4 +45,8 @@ public sealed class LlmOptions
 
     public int TimeoutSeconds { get; set; } = 60;
     public string AnthropicVersion { get; set; } = "2023-06-01";
+
+    public string? AgentName { get; set; }
+    public string FoundryScope { get; set; } = "https://ai.azure.com/.default";
+    public bool SendSystemPrompt { get; set; } = true;
 }
