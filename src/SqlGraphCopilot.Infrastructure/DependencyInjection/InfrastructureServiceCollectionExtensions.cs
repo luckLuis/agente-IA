@@ -17,6 +17,8 @@ using SqlGraphCopilot.Infrastructure.Migration;
 using SqlGraphCopilot.Infrastructure.Parsing;
 using SqlGraphCopilot.Infrastructure.SqlServer;
 using SqlGraphCopilot.Infrastructure.Usage;
+using SqlGraphCopilot.Application.Mishi;
+using SqlGraphCopilot.Infrastructure.Mishi;
 
 namespace SqlGraphCopilot.Infrastructure.DependencyInjection;
 
@@ -48,6 +50,8 @@ public static class InfrastructureServiceCollectionExtensions
         services.TryAddSingleton<IInstanceRegistry, InstanceRegistry>();
         services.TryAddSingleton<IDbConnectionFactory, SqlServerConnectionFactory>();
         services.TryAddSingleton<ICatalogReader, SqlServerCatalogReader>();
+        services.Configure<MishiOptions>(configuration.GetSection("Mishi"));
+        services.TryAddSingleton<IRiskScanner, RiskScanner>();
 
         // Parsing T-SQL
         services.TryAddSingleton<ITSqlParsingService, TSqlParsingService>();

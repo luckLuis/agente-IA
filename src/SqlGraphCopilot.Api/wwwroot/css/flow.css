@@ -1,0 +1,282 @@
+/* Datos de entrada de un SP (análisis de flujo) y validación del código migrado. */
+.flow-panel {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+  .flow-panel h3 {
+    margin: 0 0 8px;
+    font-size: 13px;
+  }
+
+  .flow-panel h4 {
+    margin: 14px 0 6px;
+    font-size: 12px;
+    color: var(--text-2);
+    text-transform: uppercase;
+    letter-spacing: .04em;
+  }
+
+  .flow-panel .muted {
+    color: var(--text-2);
+    font-size: 12px;
+    margin: 0 0 8px;
+  }
+
+  .flow-panel code {
+    background: var(--surface-2);
+    padding: 0 4px;
+    border-radius: 4px;
+    font-size: 11.5px;
+  }
+
+/* ---------- Parámetros ---------- */
+.flow-params {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+  .flow-params th {
+    text-align: left;
+    color: var(--text-3);
+    font-weight: 500;
+    padding: 2px 6px 4px 0;
+  }
+
+  .flow-params td {
+    padding: 3px 6px 3px 0;
+    vertical-align: middle;
+  }
+
+.flow-input {
+  width: 100%;
+  min-width: 80px;
+  background: var(--bg-2);
+  color: var(--text);
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  padding: 4px 6px;
+  font: inherit;
+}
+
+  .flow-input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(34, 211, 238, .2);
+  }
+
+/* ---------- Ramas y guardas ---------- */
+.flow-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.flow-branch, .flow-guard {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: var(--surface);
+  transition: opacity .15s, border-color .15s;
+}
+
+.flow-branch-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.flow-branch .kind {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+
+.flow-branch .kind-exec {
+  color: #67e8f9;
+}
+
+.flow-branch .kind-write {
+  color: #fda4af;
+}
+
+.flow-branch .kind-dynamic {
+  color: #fcd34d;
+}
+
+.flow-branch .link {
+  background: none;
+  border: 0;
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
+
+  .flow-branch .link:hover {
+    color: var(--accent);
+    text-decoration: underline;
+  }
+
+.flow-branch .status, .flow-guard .status {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.flow-conds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 5px;
+}
+
+.chip-cond {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 11px;
+  background: var(--bg-2);
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  padding: 1px 6px;
+  color: #cbd5e1;
+}
+
+  .chip-cond.data {
+    border-style: dashed;
+    color: #fcd34d;
+  }
+
+  .chip-cond.always {
+    color: var(--ok);
+  }
+
+.flow-args {
+  margin-top: 5px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.flow-branch[data-state="yes"] {
+  border-color: rgba(52, 211, 153, .6);
+}
+
+  .flow-branch[data-state="yes"] .status {
+    color: var(--ok);
+  }
+
+.flow-branch[data-state="maybe"] {
+  border-color: rgba(245, 158, 11, .5);
+}
+
+  .flow-branch[data-state="maybe"] .status {
+    color: var(--warn);
+  }
+
+.flow-branch[data-state="no"] {
+  opacity: .4;
+}
+
+.flow-guard[data-state="yes"] {
+  border-color: rgba(244, 63, 94, .6);
+}
+
+  .flow-guard[data-state="yes"] .status {
+    color: var(--danger);
+  }
+
+.flow-guard[data-state="maybe"] .status {
+  color: var(--warn);
+}
+
+/* ---------- Notas y script ---------- */
+.flow-notes {
+  white-space: pre-wrap;
+  font-size: 12px;
+  color: #fcd34d;
+  background: rgba(245, 158, 11, .08);
+  border: 1px solid rgba(245, 158, 11, .3);
+  border-radius: 8px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+}
+
+.flow-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-2);
+  margin: 4px 0;
+}
+
+.flow-script {
+  margin: 6px 0;
+  padding: 8px 10px;
+  background: #050914;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  color: #a5f3fc;
+  font: 12px/1.5 ui-monospace, Consolas, monospace;
+  white-space: pre;
+  overflow-x: auto;
+  user-select: all;
+}
+
+.flow-branch-head .btn {
+  margin-left: 4px;
+}
+
+/* ---------- Validación del código migrado ---------- */
+.verify-box {
+  margin-top: 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.verify {
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  background: var(--surface);
+}
+
+  .verify.ok {
+    border-color: rgba(52, 211, 153, .6);
+    color: var(--ok);
+  }
+
+  .verify.bad {
+    border-color: rgba(244, 63, 94, .55);
+  }
+
+  .verify.run {
+    color: var(--accent);
+  }
+
+  .verify ul {
+    margin: 6px 0 0;
+    padding-left: 16px;
+    color: var(--text);
+  }
+
+  .verify pre {
+    margin: 4px 0 0;
+    white-space: pre-wrap;
+    font: 11px/1.4 ui-monospace, Consolas, monospace;
+    color: #fda4af;
+  }
+
+.verify-note {
+  font-size: 11px;
+  color: var(--text-3);
+}

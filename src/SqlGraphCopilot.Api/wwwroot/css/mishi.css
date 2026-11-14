@@ -1,0 +1,310 @@
+/* Mishi-SQL: la mascota sobre el escenario (gato, burbuja, HUD, cajón de análisis y expresiones). */
+.mishi {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: min(340px, calc(100% - 28px));
+  pointer-events: none;
+}
+
+  .mishi > * {
+    pointer-events: auto;
+  }
+
+.mishi-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  position: relative;
+}
+
+.mishi-cat {
+  width: 92px;
+  height: 98px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  color: #34d399;
+  filter: drop-shadow(0 6px 14px rgba(0, 0, 0, .5));
+}
+
+.mishi-svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+/* ---------- HUD de nivel y experiencia ---------- */
+.mishi-hud {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, .85);
+  border: 1px solid var(--line-2);
+  font-size: 11px;
+  color: var(--text-2);
+  margin-bottom: 6px;
+}
+
+.mishi-level {
+  color: #fcd34d;
+  font-weight: 700;
+}
+
+.mishi-bar {
+  width: 54px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+  .mishi-bar i {
+    display: block;
+    height: 100%;
+    width: 0;
+    background: linear-gradient(90deg, #fbbf24, #fde047);
+    transition: width .5s ease;
+  }
+
+/* ---------- Burbuja y texto flotante ---------- */
+.mishi-bubble {
+  position: relative;
+  padding: 8px 12px;
+  border-radius: 14px 14px 14px 4px;
+  background: #fffbeb;
+  color: #422006;
+  font-size: 12.5px;
+  line-height: 1.4;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .45);
+  cursor: pointer;
+  animation: mishi-pop .25s ease-out;
+}
+
+.mishi[data-state="alert"] .mishi-bubble {
+  background: #fef2f2;
+  color: #7f1d1d;
+  border: 1px solid #fca5a5;
+}
+
+.mishi-float {
+  position: absolute;
+  left: 70px;
+  top: 0;
+  font-weight: 700;
+  font-size: 13px;
+  color: #fde047;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, .7);
+  animation: mishi-float 1.5s ease-out forwards;
+  pointer-events: none;
+}
+
+/* ---------- Cajón de análisis ---------- */
+.mishi-drawer {
+  width: min(320px, 100%);
+  max-height: 55vh;
+  overflow: auto;
+  padding: 10px;
+  border-radius: 12px;
+  background: rgba(11, 17, 32, .96);
+  border: 1px solid var(--line-2);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .5);
+  display: grid;
+  gap: 8px;
+}
+
+  .mishi-drawer[hidden], .mishi-bubble[hidden] {
+    display: none;
+  }
+
+.mishi-drawer-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #fcd34d;
+}
+
+.mishi-close {
+  background: none;
+  border: 0;
+  color: var(--text-2);
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.mishi-sql {
+  width: 100%;
+  background: #050914;
+  color: #a5f3fc;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  padding: 8px;
+  font: 12px/1.4 ui-monospace, Consolas, monospace;
+  resize: vertical;
+}
+
+.mishi-learned {
+  font-size: 12px;
+  color: #fcd34d;
+  background: rgba(251, 191, 36, .08);
+  border: 1px solid rgba(251, 191, 36, .3);
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+
+.mishi-tech {
+  font-size: 12px;
+  color: var(--text);
+}
+
+  .mishi-tech ul {
+    padding-left: 16px;
+    margin: 6px 0;
+  }
+
+/* ---------- Expresiones: cada estado muestra sus ojos, boca y adornos ---------- */
+.mishi-svg .eyes, .mishi-svg .mouth, .mishi-svg .bulb, .mishi-svg .dots, .mishi-svg .fur {
+  display: none;
+}
+
+.mishi[data-state="happy"] .e-happy, .mishi[data-state="happy"] .m-happy,
+.mishi[data-state="studying"] .e-studying, .mishi[data-state="studying"] .m-studying, .mishi[data-state="studying"] .dots,
+.mishi[data-state="smart"] .e-smart, .mishi[data-state="smart"] .m-smart, .mishi[data-state="smart"] .bulb,
+.mishi[data-state="alert"] .e-alert, .mishi[data-state="alert"] .m-alert, .mishi[data-state="alert"] .fur {
+  display: block;
+}
+
+.mishi[data-state="happy"] .mishi-cat {
+  color: #34d399;
+}
+
+.mishi[data-state="studying"] .mishi-cat {
+  color: #38bdf8;
+}
+
+.mishi[data-state="smart"] .mishi-cat {
+  color: #facc15;
+}
+
+.mishi[data-state="alert"] .mishi-cat {
+  color: #ef4444;
+}
+
+.mishi[data-state="alert"] .ear-l {
+  transform: rotate(-14deg);
+  transform-origin: 40px 34px;
+}
+
+.mishi[data-state="alert"] .ear-r {
+  transform: rotate(14deg);
+  transform-origin: 80px 34px;
+}
+
+.mishi-svg .dots circle {
+  fill: #38bdf8;
+}
+
+.mishi-svg .tail {
+  transform-origin: 88px 92px;
+}
+
+/* ---------- Animaciones ---------- */
+@keyframes mishi-pop {
+  from {
+    transform: translateY(6px) scale(.96);
+    opacity: 0;
+  }
+
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+@keyframes mishi-float {
+  from {
+    transform: translateY(0);
+    opacity: 1;
+  }
+
+  to {
+    transform: translateY(-34px);
+    opacity: 0;
+  }
+}
+
+@keyframes mishi-tail {
+  0%, 100% {
+    transform: rotate(0);
+  }
+
+  50% {
+    transform: rotate(12deg);
+  }
+}
+
+@keyframes mishi-blink {
+  0%, 92%, 100% {
+    transform: scaleY(1);
+  }
+
+  96% {
+    transform: scaleY(.1);
+  }
+}
+
+@keyframes mishi-shake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+
+  25% {
+    transform: translateX(-2px);
+  }
+
+  75% {
+    transform: translateX(2px);
+  }
+}
+
+@keyframes mishi-bob {
+  0%, 100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .mishi-svg .tail {
+    animation: mishi-tail 1.8s ease-in-out infinite;
+  }
+
+  .mishi-svg .blink {
+    animation: mishi-blink 4.5s infinite;
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+
+  .mishi[data-state="alert"] .mishi-svg {
+    animation: mishi-shake .25s linear infinite;
+  }
+
+  .mishi[data-state="happy"] .mishi-svg {
+    animation: mishi-bob 2.4s ease-in-out infinite;
+  }
+
+  .mishi[data-state="smart"] .bulb {
+    animation: mishi-bob 1.6s ease-in-out infinite;
+  }
+}

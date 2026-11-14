@@ -3,6 +3,8 @@ import { renderMarkdown, escapeHtml } from './markdown.js';
 import { GraphView, KIND_STYLE, kindLabel, kindColor } from './graph-view.js';
 import { fetchFlowInputs, mountInputsPanel, buildMigrationPrompt } from './flow-inputs.js';
 import { loadStatsPanel } from './stats.js';
+import { Mishi, analyzeObject, analyzeSql, fetchProgress } from './mishi.js';
+import { fetchDefinition, mountDefinition } from './definition-viewer.js';
 import { extractCSharpFiles, hasTests, verifyMigration, isGreen, renderVerifyReport, buildFixPrompt, MAX_AUTO_FIXES } from './migration-verify.js';
 
 // ---- Estado ------------------------------------------------------------------------------
@@ -75,7 +77,14 @@ const SUGGESTIONS = [
 ];
 
 let graph;
+let mishi = null;   // mascota (Mishi el gato o Bruno el husky)
+let petInfo = { name: 'Mishi', emoji: '🐱' };   // se actualiza con el evento mishi:pet
 let lastRedundancy = null;   // último informe de redundancias, para dibujar la similitud en la red
+const results = {};   // secciones plegables del detalle: { impact, inputs, definition } -> <details>
+
+const MODULE_KINDS = ['StoredProcedure', 'Function', 'Trigger', 'View'];   // objetos con código que se puede leer
+const MIGRATABLE_KINDS = ['StoredProcedure', 'Function', 'Trigger'];       // objetos que tiene sentido migrar a C#
+const prefersReducedMotion = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // ---- Arranque ----------------------------------------------------------------------------
 
@@ -89,14 +98,21 @@ async function init() {
     onCountsChanged: updateCounts
   });
 
-  // Contenedor del panel «Datos de entrada» (bajo el informe de impacto).
+  // Contenedores de los informes del panel de detalle (impacto, datos de entrada, código).
+  // Cada uno vive dentro de una sección plegable; solo la última consultada queda abierta.
   el.inputsContent = document.createElement('div');
   el.inputsContent.id = 'inputs-content';
-  el.impactContent.after(el.inputsContent);
+  el.definitionContent = document.createElement('div');
+  el.definitionContent.id = 'definition-content';
+  el.impactContent.after(el.inputsContent, el.definitionContent);
+  results.impact = makeResultShell(el.impactContent, 'Impacto si se modifica');
+  results.inputs = makeResultShell(el.inputsContent, 'Datos de entrada');
+  results.definition = makeResultShell(el.definitionContent, 'Código T-SQL');
 
   buildKindControls();
   buildSuggestions();
   wireEvents();
+  initMishi();
 
   try {
     const instances = await api.instances();
@@ -116,7 +132,16 @@ async function init() {
   }
 }
 
+/** Texto del botón que pide a la mascota olfatear el objeto seleccionado. */
+const sniffLabel = () => `Que ${petInfo.name} lo huela ${petInfo.emoji}`;
+
 function wireEvents() {
+  // La mascota avisa cuando cambia (o al arrancar): se actualizan las etiquetas que llevan su nombre.
+  document.addEventListener('mishi:pet', (event) => {
+    petInfo = event.detail;
+    document.querySelectorAll('[data-sniff-label]').forEach((button) => { button.textContent = sniffLabel(); });
+  });
+
   el.instanceSelect.addEventListener('change', () => onInstanceChange());
   el.databaseSelect.addEventListener('change', () => { el.loadBtn.disabled = !el.databaseSelect.value; });
   el.scopeForm.addEventListener('submit', (event) => { event.preventDefault(); loadScope(); });
@@ -346,6 +371,50 @@ function showExternalError(node, message) {
   el.dialog.showModal();
 }
 
+// ---- Secciones plegables de resultados ---------------------------------------------------
+
+/** Envuelve un contenedor de resultados en un <details>; el contenedor sigue siendo donde se dibuja el informe. */
+function makeResultShell(container, title) {
+  const details = document.createElement('details');
+  details.className = 'result';
+  details.hidden = true;
+  const summary = document.createElement('summary');
+  summary.textContent = title;
+  container.before(details);
+  details.append(summary, container);
+  return details;
+}
+
+/** Muestra la sección pedida, cierra las demás (queda abierta solo la última consulta) y lleva la vista hasta ella. */
+function showResult(name) {
+  const shell = results[name];
+  for (const other of Object.values(results)) if (other !== shell) other.open = false;
+  shell.hidden = false;
+  shell.open = true;
+  scrollToResult(name);
+}
+
+/** Alinea la sección con el borde superior del panel. Se repite al terminar de cargar, porque al principio
+ *  solo hay un «Cargando…» y el panel aún no tiene alto suficiente para dejarla arriba. */
+function scrollToResult(name) {
+  results[name].scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'start' });
+}
+
+/** Deshabilita el botón y muestra un spinner mientras dura la tarea (evita pulsaciones repetidas). */
+async function withBusy(button, task) {
+  if (!button || button.classList.contains('is-busy')) return;
+  button.classList.add('is-busy');
+  button.disabled = true;
+  button.setAttribute('aria-busy', 'true');
+  try {
+    await task();
+  } finally {
+    button.classList.remove('is-busy');
+    button.disabled = false;
+    button.removeAttribute('aria-busy');
+  }
+}
+
 // ---- Panel de detalle ---------------------------------------------------------------------
 
 function selectNode(id, { fromGraph = false } = {}) {
@@ -355,9 +424,24 @@ function selectNode(id, { fromGraph = false } = {}) {
   if (fromGraph && $('tab-copilot').hidden) switchTab('detail');
 }
 
+const actionButton = (action, label, style = 'ghost', extra = '') =>
+  `<button type="button" class="btn ${style} small" data-action="${action}" ${extra}>${label}</button>`;
+
+function actionGroup(title, buttons) {
+  const items = buttons.filter(Boolean);
+  return items.length
+    ? `<section class="action-group"><h4>${title}</h4><div class="action-grid">${items.join('')}</div></section>`
+    : '';
+}
+
 function renderDetail(node) {
+  for (const shell of Object.values(results)) {
+    shell.hidden = true;
+    shell.open = true;
+  }
   el.impactContent.innerHTML = '';
   el.inputsContent.innerHTML = '';
+  el.definitionContent.innerHTML = '';
   if (!node) {
     el.detailEmpty.hidden = false;
     el.detailContent.hidden = true;
@@ -367,53 +451,143 @@ function renderDetail(node) {
   el.detailEmpty.hidden = true;
   el.detailContent.hidden = false;
 
+  const isModule = MODULE_KINDS.includes(node.kind);
+  const fanIn = node.fanIn ?? 0;
+  const fanOut = node.fanOut ?? 0;
+
   const badges = [];
   if (node.isCritical) badges.push('<span class="badge crit">Crítico</span>');
   if (node.isExternal) badges.push('<span class="badge warn">Externo · no expandido</span>');
   if (node.kind === 'Missing') badges.push('<span class="badge crit">No existe</span>');
-  if (node.hasDynamicSql) badges.push('<span class="badge warn">SQL dinámico</span>');
+  if (node.hasDynamicSql) badges.push('<span class="badge warn" title="Construye SQL en tiempo de ejecución: el grafo puede estar incompleto.">SQL dinámico</span>');
   if (node.usesOpenQuery) badges.push('<span class="badge warn">OPENQUERY</span>');
-  if (['StoredProcedure', 'Function', 'Trigger', 'View'].includes(node.kind)) {
-    badges.push(node.isClassified ? '<span class="badge info">Clasificado</span>' : '<span class="badge">Sin clasificar</span>');
+  if (isModule) {
+    badges.push(node.isClassified
+      ? '<span class="badge info" title="Ya se sabe qué objetos lee, escribe o ejecuta.">Clasificado</span>'
+      : '<span class="badge" tabindex="0" title="Aún no se sabe si este objeto lee, escribe o ejecuta a otros, por eso sus relaciones aparecen como «referencia». Use «Escaneo profundo» (arriba) para clasificar toda la base.">Sin clasificar</span>');
   }
+
+  const style = KIND_STYLE[node.kind];
+  const icon = style
+    ? shapeSvg(style.shape, style.color, ['External', 'LinkedServer', 'Missing'].includes(node.kind))
+    : `<span class="dot" style="--c:${kindColor(node.kind)}"></span>`;
+
+  const analyze = actionGroup('Analizar', [
+    actionButton('impact', 'Analizar impacto', 'primary'),
+    node.kind === 'StoredProcedure' ? actionButton('inputs', 'Datos de entrada', 'primary') : '',
+    isModule ? actionButton('mishi', sniffLabel(), 'ghost', 'data-sniff-label') : '',
+    isModule ? actionButton('definition', 'Ver código', 'ghost') : ''
+  ]);
+
+  const explore = actionGroup('Explorar en la red', [
+    actionButton('expand1', 'Expandir 1 nivel'),
+    actionButton('expand2', 'Expandir 2 niveles'),
+    actionButton('focus', 'Usar como foco'),
+    isModule ? actionButton('flow', 'Trazar flujo') : ''
+  ]);
+
+  const ask = `
+    <details class="action-more">
+      <summary>Preguntar al copiloto</summary>
+      <div class="action-grid">
+        ${actionButton('explain', '¿Qué hace?')}
+        ${isModule ? actionButton('logic', 'Explicar lógica') : ''}
+        ${actionButton('ask', 'Escribir una pregunta')}
+      </div>
+    </details>`;
+
+  const migrate = MIGRATABLE_KINDS.includes(node.kind)
+    ? actionGroup('Migrar', [actionButton('migrate', 'Migrar a C#', 'primary')])
+    : '';
 
   el.detailContent.innerHTML = `
     <div class="detail-head">
-      <span class="dot" style="--c:${kindColor(node.kind)}"></span>
-      <div>
+      <span class="detail-icon">${icon}</span>
+      <div class="detail-title">
         <div class="detail-name">${escapeHtml(node.schema)}.${escapeHtml(node.name)}</div>
         <div class="detail-sub">${escapeHtml(kindLabel(node.kind))} · ${escapeHtml(node.server)} / ${escapeHtml(node.database)}</div>
       </div>
+      <button type="button" class="btn ghost small" data-copy-name title="Copiar ${escapeHtml(node.schema)}.${escapeHtml(node.name)}">Copiar</button>
     </div>
     <div class="badges">${badges.join('')}</div>
     <div class="metrics">
-      <div class="metric"><b>${node.fanIn}</b><span>Lo usan (fan-in)</span></div>
-      <div class="metric"><b>${node.fanOut}</b><span>Usa (fan-out)</span></div>
+      <button type="button" class="metric metric-btn" data-neighbors="in" aria-expanded="false" ${fanIn ? '' : 'disabled'}>
+        <b>${fanIn}</b><span>Lo usan (fan-in)</span>
+      </button>
+      <button type="button" class="metric metric-btn" data-neighbors="out" aria-expanded="false" ${fanOut ? '' : 'disabled'}>
+        <b>${fanOut}</b><span>Usa (fan-out)</span>
+      </button>
     </div>
-    <div class="actions">
-      <button type="button" class="btn ghost small" data-action="expand1">Expandir 1 nivel</button>
-      <button type="button" class="btn ghost small" data-action="expand2">Expandir 2 niveles</button>
-      <button type="button" class="btn primary small" data-action="impact">Analizar impacto</button>
-      ${node.kind === 'StoredProcedure' ? '<button type="button" class="btn primary small" data-action="inputs">Datos de entrada</button>' : ''}
-      <button type="button" class="btn ghost small" data-action="flow">Trazar flujo</button>
-      <button type="button" class="btn ghost small" data-action="focus">Usar como foco</button>
-      <button type="button" class="btn ghost small" data-action="ask">Preguntar al copiloto</button>
-      <button type="button" class="btn ghost small" data-action="explain">¿Qué hace?</button>
-      <button type="button" class="btn ghost small" data-action="logic">Explicar lógica</button>
-      <button type="button" class="btn primary small" data-action="migrate">Migrar a C#</button>
-    </div>`;
+    <div class="neighbor-box" hidden></div>
+    ${analyze}${explore}${ask}${migrate}`;
 
   el.detailContent.querySelectorAll('[data-action]').forEach((button) =>
-    button.addEventListener('click', () => onDetailAction(button.dataset.action, node)));
+    button.addEventListener('click', () => onDetailAction(button.dataset.action, node, button)));
+  el.detailContent.querySelectorAll('[data-neighbors]').forEach((button) =>
+    button.addEventListener('click', () => toggleNeighbors(node, button.dataset.neighbors, button)));
+  el.detailContent.querySelector('[data-copy-name]').addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(`${node.schema}.${node.name}`);
+      toast('Nombre copiado.', 'ok');
+    } catch {
+      toast('No se pudo copiar.', 'error');
+    }
+  });
 }
 
-function onDetailAction(action, node) {
+/** Lista quién usa al objeto (fan-in) o a quién usa (fan-out), pidiendo solo su vecindario directo. */
+async function toggleNeighbors(node, side, button) {
+  const box = el.detailContent.querySelector('.neighbor-box');
+  const buttons = el.detailContent.querySelectorAll('[data-neighbors]');
+  const wasOpen = button.getAttribute('aria-expanded') === 'true';
+  buttons.forEach((b) => b.setAttribute('aria-expanded', 'false'));
+  if (wasOpen) { box.hidden = true; return; }
+
+  button.setAttribute('aria-expanded', 'true');
+  box.hidden = false;
+  box.innerHTML = '<div class="muted-block">Cargando…</div>';
+  try {
+    const subgraph = await api.neighborhood(node.id, 1, side === 'in' ? 'Incoming' : 'Outgoing');
+    if (!box.isConnected || button.getAttribute('aria-expanded') !== 'true') return;   // el usuario cambió de objeto o cerró la lista
+
+    const neighbors = (subgraph.nodes ?? []).filter((n) => n.id !== node.id);
+    if (neighbors.length === 0) {
+      box.innerHTML = '<div class="muted-block">No hay objetos en esa dirección.</div>';
+      return;
+    }
+    const rows = neighbors.slice(0, 60).map((n) => `
+      <li><button type="button" data-node-id="${escapeHtml(n.id)}">
+        <span class="dot" style="--c:${kindColor(n.kind)}"></span>
+        <span class="name">${escapeHtml(n.schema)}.${escapeHtml(n.name)}</span>
+        <span class="meta">${escapeHtml(kindLabel(n.kind))}</span>
+      </button></li>`).join('');
+    const more = neighbors.length > 60 ? `<p class="hint">Se muestran 60 de ${neighbors.length}.</p>` : '';
+    box.innerHTML = `
+      <div class="neighbor-head">
+        <span class="section-title">${side === 'in' ? 'Lo usan' : 'Usa'} (${neighbors.length})</span>
+        <button type="button" class="btn ghost small" data-neighbors-merge>Mostrar en la red</button>
+      </div>
+      <ul class="item-list">${rows}</ul>${more}`;
+    box.querySelector('[data-neighbors-merge]').addEventListener('click', () => {
+      graph.merge(subgraph, node.id);
+      showEmpty(false);
+      updateCounts();
+      toast(`${neighbors.length} objeto(s) añadidos a la red.`, 'ok');
+    });
+  } catch (error) {
+    box.innerHTML = `<div class="msg error">${escapeHtml(error.message)}</div>`;
+  }
+}
+
+function onDetailAction(action, node, button) {
   switch (action) {
-    case 'expand1': expandNode(node.id); break;
-    case 'expand2': expandNode(node.id, { depth: 2 }); break;
-    case 'impact': runImpact(node); break;
-    case 'flow': traceFlow(node); break;
-    case 'inputs': showInputs(node); break;
+    case 'expand1': return withBusy(button, () => expandNode(node.id));
+    case 'expand2': return withBusy(button, () => expandNode(node.id, { depth: 2 }));
+    case 'impact': return withBusy(button, () => runImpact(node));
+    case 'flow': return withBusy(button, () => traceFlow(node));
+    case 'inputs': return withBusy(button, () => showInputs(node));
+    case 'mishi': return withBusy(button, () => smellNode(node));
+    case 'definition': return withBusy(button, () => showDefinition(node));
     case 'focus':
       graph.setFocus(node.id);
       toast(`Foco: ${node.schema}.${node.name}. Use "Saltos desde el foco" para filtrar.`);
@@ -439,7 +613,24 @@ function onDetailAction(action, node) {
   }
 }
 
+/** Lee el código del objeto y lo muestra resaltado, con números de línea y botón de copiar. */
+async function showDefinition(node) {
+  showResult('definition');
+  el.definitionContent.innerHTML = '<div class="muted-block">Leyendo el código…</div>';
+  try {
+    const report = await fetchDefinition({ instance: node.server, database: node.database, schema: node.schema, name: node.name });
+    if (state.selectedId !== node.id) return;   // el usuario ya eligió otro objeto
+    mountDefinition(el.definitionContent, report, {
+      onCopy: (ok) => toast(ok ? 'Código copiado.' : 'No se pudo copiar.', ok ? 'ok' : 'error')
+    });
+    scrollToResult('definition');
+  } catch (error) {
+    el.definitionContent.innerHTML = `<div class="msg error">${escapeHtml(error.message)}</div>`;
+  }
+}
+
 async function runImpact(node) {
+  showResult('impact');
   el.impactContent.innerHTML = '<div class="muted-block">Calculando impacto…</div>';
   // Mientras el servidor calcula, la red muestra ondas desde el objeto; al llegar el informe se marca por niveles.
   graph.startScan([node.id], { direction: 'in' });
@@ -447,6 +638,7 @@ async function runImpact(node) {
   try {
     const report = await api.impact(node.id);
     renderImpact(report);
+    scrollToResult('impact');
     graph.stopScan();
     await graph.playTrace(impactLevels(report), { direction: 'both', onStep: traceBanner('Impacto') });
   } catch (error) {
@@ -481,8 +673,45 @@ async function migrateToCSharp(node) {
   sendChat(buildMigrationPrompt(node), { autoVerify: { attempt: 0 }, display: `Migra ${node.schema}.${node.name} a C#: solo la lógica (sin SQL en el código) y pruebas unitarias` });
 }
 
+// ---- Mishi-SQL ---------------------------------------------------------------------------
+
+async function initMishi() {
+  mishi = new Mishi(document.querySelector('.stage'), {
+    escapeHtml,
+    renderMarkdown,
+    onAnalyzeSql: (sql) => smellSql(sql)
+  });
+  try {
+    mishi.setProgress(await fetchProgress());
+    mishi.say('¡Miau! 🐱 Soy Mishi. Elige un SP y pídeme que lo huela.', 7000);
+  } catch { /* sin backend de Mishi: la mascota queda en reposo */ }
+}
+
+/** Mishi analiza el código de un objeto de la red (sin gastar tokens: usa el árbol sintáctico). */
+async function smellNode(node) {
+  if (!mishi) return;
+  mishi.react('studying', `Mrrr… 📚 Olfateando ${node.schema}.${node.name}…`);
+  try {
+    mishi.apply(await analyzeObject({ instance: node.server, database: node.database, schema: node.schema, name: node.name }));
+    mishi.openDrawer();
+  } catch (error) {
+    mishi.react('alert', `¡Miau! 🙀 ${error.message}`);
+  }
+}
+
+/** Mishi analiza SQL pegado por el usuario. */
+async function smellSql(sql) {
+  mishi.react('studying', 'Mrrr… 📚 Olfateando tu consulta…');
+  try {
+    mishi.apply(await analyzeSql(sql));
+  } catch (error) {
+    mishi.react('alert', `¡Miau! 🙀 ${error.message}`);
+  }
+}
+
 /** Muestra los parámetros del SP y qué rama se ejecuta según los valores de entrada; «Marcar en la red» anima esa rama. */
 async function showInputs(node) {
+  showResult('inputs');
   el.inputsContent.innerHTML = '<div class="muted-block">Leyendo el código del procedimiento…</div>';
   graph.startScan([node.id]);
   try {
@@ -510,6 +739,7 @@ async function showInputs(node) {
         graph.playTrace([[node.id], ids], { direction: 'out', onStep: traceBanner('Entrada') }).then(() => showBanner(null));
       }
     });
+    scrollToResult('inputs');
   } catch (error) {
     el.inputsContent.innerHTML = `<div class="msg error">${escapeHtml(error.message)}</div>`;
   } finally {
@@ -554,7 +784,6 @@ function renderImpact(report) {
     `<li><button type="button" data-node-id="${escapeHtml(d.tableId)}"><span class="name">${escapeHtml(d.tableName)}</span><span class="meta">${d.readerNames.length} lector(es)</span></button></li>`).join('');
 
   el.impactContent.innerHTML = `
-    <h3 class="section-title">Impacto si se modifica</h3>
     <div class="risk">
       <span class="risk-badge risk-${report.level}">${RISK_LABELS[report.level] ?? report.level}</span>
       <div class="bar" title="Puntaje ${report.score}/100"><i style="width:${Math.min(100, report.score)}%"></i></div>
@@ -824,6 +1053,8 @@ async function runVerification(message, files, { attempt, auto, button }) {
   try {
     const report = await verifyMigration(files, attempt);
     box.innerHTML = renderVerifyReport(report, escapeHtml);
+    if (isGreen(report)) mishi?.react('happy', `¡Purrr! 😸 ${report.passed} prueba(s) en verde. ¡Migración a salvo!`);
+    else mishi?.react('alert', report.compiled ? `¡Miau! 🙀 Fallaron ${report.failed} prueba(s). Voy a revisar con el copiloto.` : '¡Miau! 🙀 El código no compila. Hay que afilar las garras.');
     button.disabled = false;
     button.textContent = 'Validar de nuevo';
 

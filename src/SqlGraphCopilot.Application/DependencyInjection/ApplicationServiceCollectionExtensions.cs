@@ -5,6 +5,7 @@ using SqlGraphCopilot.Application.Analysis;
 using SqlGraphCopilot.Application.Exploration;
 using SqlGraphCopilot.Application.Flow;
 using SqlGraphCopilot.Application.Indexing;
+using SqlGraphCopilot.Application.Mishi;
 
 namespace SqlGraphCopilot.Application.DependencyInjection;
 
@@ -41,6 +42,9 @@ public static class ApplicationServiceCollectionExtensions
 
         // Datos de entrada de un SP (análisis de flujo)
         services.TryAddSingleton<ProcedureFlowService>();
+
+        services.TryAddSingleton<MishiMemory>();
+        services.TryAddSingleton<MishiService>();
 
         return services;
     }

@@ -1,0 +1,66 @@
+/* Adaptación a pantallas pequeñas y preferencia de movimiento reducido. Cargar siempre al final. */
+@media (max-width: 1280px) {
+  .workspace {
+    grid-template-columns: 260px minmax(0, 1fr) 340px;
+  }
+}
+
+@media (max-width: 1080px) {
+  body {
+    overflow: auto;
+  }
+
+  .workspace {
+    grid-template-columns: 1fr;
+    grid-auto-rows: auto;
+  }
+
+  .stage {
+    height: 70vh;
+    order: -1;
+  }
+
+  .panel {
+    max-height: 80vh;
+  }
+
+  .index-status {
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .topbar {
+    padding: 10px 12px;
+    gap: 10px;
+  }
+
+  select {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .scope {
+    width: 100%;
+  }
+
+    .scope label {
+      flex: 1 1 140px;
+    }
+
+  .workspace {
+    padding: 8px;
+    gap: 8px;
+  }
+
+  .analysis-actions, .actions {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}

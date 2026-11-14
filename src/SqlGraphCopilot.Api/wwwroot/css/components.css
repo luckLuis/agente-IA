@@ -1,0 +1,67 @@
+/* Componentes pequeños reutilizados en varias zonas: punto de color, chips e insignias. */
+
+/* ---------- Punto de color por tipo de objeto ---------- */
+.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--c, var(--text-3));
+  box-shadow: 0 0 8px var(--c, transparent);
+}
+
+/* ---------- Chips (búsqueda y sugerencias del copiloto) ---------- */
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.chip {
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  cursor: pointer;
+  border: 1px solid var(--line-2);
+  background: transparent;
+  color: var(--text-2);
+  font-weight: 500;
+}
+
+  .chip[aria-pressed="true"] {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(34, 211, 238, .08);
+  }
+
+/* ---------- Insignias ---------- */
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 10px 0;
+}
+
+.badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line-2);
+  color: var(--text-2);
+}
+
+  .badge.crit {
+    border-color: rgba(244, 63, 94, .5);
+    color: #fda4af;
+  }
+
+  .badge.warn {
+    border-color: rgba(245, 158, 11, .5);
+    color: #fcd34d;
+  }
+
+  .badge.info {
+    border-color: rgba(34, 211, 238, .4);
+    color: #67e8f9;
+  }

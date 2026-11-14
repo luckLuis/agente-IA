@@ -1,0 +1,316 @@
+/* Panel Detalle: cabecera, métricas clicables, acciones agrupadas, resultados plegables y visor de código.
+   Cargar después de panel.css y mishi-pets.css, y antes de responsive.css. */
+
+/* ---------- Cabecera ---------- */
+.detail-head {
+  align-items: center;
+}
+
+.detail-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.detail-icon {
+  display: inline-flex;
+  flex: none;
+}
+
+  .detail-icon svg {
+    width: 20px;
+    height: 20px;
+    filter: drop-shadow(0 0 4px rgba(34, 211, 238, .5));
+  }
+
+  .detail-icon .dot {
+    width: 12px;
+    height: 12px;
+  }
+
+/* El subtítulo gris tenía poco contraste sobre el fondo oscuro. */
+.detail-sub {
+  color: var(--text-2);
+}
+
+.badge[title] {
+  cursor: help;
+}
+
+/* ---------- Métricas clicables ---------- */
+.metric-btn {
+  font: inherit;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  position: relative;
+  transition: border-color .15s, background .15s;
+}
+
+  .metric-btn:hover:not(:disabled) {
+    border-color: var(--accent-2);
+    background: var(--surface-2);
+  }
+
+  .metric-btn:disabled {
+    cursor: default;
+    opacity: .6;
+  }
+
+  .metric-btn[aria-expanded="true"] {
+    border-color: var(--accent);
+  }
+
+  .metric-btn:not(:disabled)::after {
+    content: "";
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    width: 7px;
+    height: 7px;
+    border-right: 2px solid var(--text-3);
+    border-bottom: 2px solid var(--text-3);
+    transform: translateY(-70%) rotate(45deg);
+    transition: transform .15s;
+  }
+
+  .metric-btn[aria-expanded="true"]::after {
+    transform: translateY(-30%) rotate(-135deg);
+    border-color: var(--accent);
+  }
+
+.neighbor-box {
+  margin: -4px 0 12px;
+  padding: 8px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+
+  .neighbor-box .muted-block {
+    padding: 10px 4px;
+  }
+
+.neighbor-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+  .neighbor-head .section-title {
+    margin: 0;
+  }
+
+.neighbor-box .item-list {
+  max-height: 220px;
+  overflow: auto;
+}
+
+/* ---------- Acciones agrupadas ---------- */
+.action-group {
+  margin-top: 14px;
+}
+
+  .action-group h4 {
+    margin: 0 0 6px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--text-2);
+  }
+
+.action-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+  /* Un botón suelto (o el último de una fila impar) ocupa todo el ancho. */
+  .action-grid > .btn:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+
+.action-more {
+  margin-top: 14px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--bg-2);
+}
+
+  .action-more > summary,
+  details.result > summary {
+    list-style: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 9px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--text-2);
+    border-radius: 9px;
+  }
+
+    .action-more > summary::-webkit-details-marker,
+    details.result > summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .action-more > summary::after,
+    details.result > summary::after {
+      content: "";
+      width: 7px;
+      height: 7px;
+      border-right: 2px solid var(--text-3);
+      border-bottom: 2px solid var(--text-3);
+      transform: rotate(45deg);
+      transition: transform .15s;
+    }
+
+  .action-more[open] > summary::after,
+  details.result[open] > summary::after {
+    transform: rotate(-135deg);
+  }
+
+  .action-more > summary:hover,
+  details.result > summary:hover {
+    color: var(--text);
+  }
+
+  .action-more > .action-grid {
+    padding: 0 10px 10px;
+  }
+
+/* ---------- Resultados plegables (impacto, datos de entrada, código) ---------- */
+details.result {
+  margin-top: 14px;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  background: rgba(11, 17, 32, .6);
+}
+
+  details.result > summary {
+    color: var(--accent);
+    border-bottom: 1px solid transparent;
+  }
+
+  details.result[open] > summary {
+    border-bottom-color: var(--line);
+  }
+
+  details.result > div {
+    padding: 4px 12px 12px;
+  }
+
+/* ---------- Visor de código T-SQL ---------- */
+.def-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.def-scroll {
+  display: flex;
+  max-height: 420px;
+  overflow: auto;
+  background: #050914;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+  .def-scroll:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+.def-gutter, .def-code {
+  margin: 0;
+  padding: 8px 0;
+  font: 12px/1.5 var(--mono);
+}
+
+.def-gutter {
+  position: sticky;
+  left: 0;
+  flex: none;
+  padding: 8px 8px 8px 10px;
+  text-align: right;
+  color: var(--text-3);
+  background: #050914;
+  border-right: 1px solid var(--line);
+  user-select: none;
+}
+
+.def-code {
+  flex: 1;
+  min-width: max-content;
+  padding: 8px 14px;
+  white-space: pre;
+  color: #e2e8f0;
+}
+
+  .def-code code {
+    font: inherit;
+    background: none;
+    padding: 0;
+    color: inherit;
+  }
+
+.sql-kw {
+  color: #7dd3fc;
+  font-weight: 600;
+}
+
+.sql-type {
+  color: #5eead4;
+}
+
+.sql-string {
+  color: #fcd34d;
+}
+
+.sql-number {
+  color: #fdba74;
+}
+
+.sql-var {
+  color: #c4b5fd;
+}
+
+.sql-comment {
+  color: #7c8ba1;
+  font-style: italic;
+}
+
+/* ---------- Botón ocupado ---------- */
+.btn.is-busy,
+.btn.is-busy:disabled {
+  opacity: .8;
+  cursor: progress;
+}
+
+  .btn.is-busy::after {
+    content: "";
+    display: inline-block;
+    width: 11px;
+    height: 11px;
+    margin-left: 8px;
+    vertical-align: -2px;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+  }
+
+@media (max-width: 640px) {
+  .action-grid {
+    grid-template-columns: 1fr;
+  }
+}

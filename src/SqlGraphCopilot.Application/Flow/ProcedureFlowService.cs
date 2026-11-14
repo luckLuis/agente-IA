@@ -52,4 +52,10 @@ public sealed class ProcedureFlowService
 
         return entry.Ids.TryGetValue($"{schema}.{name}", out int id) ? id : null;
     }
+
+    public async Task<string?> GetDefinitionAsync(string instance, string database, string schema, string name, CancellationToken cancellationToken)
+    {
+        int? objectId = await ResolveAsync(instance, database, schema, name, cancellationToken);
+        return objectId is null ? null : await _catalog.ReadDefinitionAsync(instance, database, objectId.Value, cancellationToken);
+    }
 }
