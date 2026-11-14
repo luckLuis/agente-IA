@@ -1,5 +1,4 @@
 using System.Text.Json.Serialization;
-using SqlGraphCopilot.Api.Endpoints;
 using SqlGraphCopilot.Api.Http;
 using SqlGraphCopilot.Application.DependencyInjection;
 using SqlGraphCopilot.Infrastructure.DependencyInjection;
@@ -16,6 +15,18 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
     options.SerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
 });
+
+builder.Services
+    .AddControllers(options =>
+    {
+        options.Filters.Add<UsageActionFilter>();
+        options.SuppressImplicitRequiredAttributeForNonNullableReferenceTypes = true;
+    })
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+        options.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
+    });
 
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<DomainExceptionHandler>();
@@ -45,18 +56,7 @@ app.UseLoginValidation();                                                   // [
 app.UseDefaultFiles();   // wwwroot/index.html (el HTML ya no vive en un string de C#)
 app.UseStaticFiles();
 
-RouteGroupBuilder api = app.MapGroup("/api");
-
-api.AddEndpointFilter<UsageEndpointFilter>();   // mide cada respuesta del copiloto
-api.MapAuthEndpoints();                                                     // [LOGIN 3/4] NUEVA línea
-
-api.MapCatalogEndpoints();
-api.MapGraphEndpoints();
-api.MapAnalysisEndpoints();
-api.MapCopilotEndpoints();
-api.MapFlowEndpoints();
-api.MapMigrationEndpoints();
-api.MapUsageEndpoints();
+app.MapControllers();
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }))
     .AllowAnonymous()                                                       // [LOGIN 4/4] NUEVA línea

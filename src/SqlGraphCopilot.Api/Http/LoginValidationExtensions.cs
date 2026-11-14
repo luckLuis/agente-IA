@@ -3,14 +3,14 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.FileProviders;
-using SqlGraphCopilot.Api.Endpoints;
+using SqlGraphCopilot.Api.Controllers;
 
 namespace SqlGraphCopilot.Api.Http;
 
 /// <summary>
 /// Login de validación AISLADO. Todo lo del login vive aquí para que
 /// Program.cs solo tenga 2 llamadas: AddLoginValidation() y UseLoginValidation().
-/// Para quitar el login: borrar esas 2 líneas (+ MapAuthEndpoints y AllowAnonymous).
+/// Para quitar el login: borrar esas 2 líneas (+ AuthController y AllowAnonymous).
 /// </summary>
 public static class LoginValidationExtensions
 {
@@ -74,7 +74,7 @@ public static class LoginValidationExtensions
         services.AddRateLimiter(options =>
         {
             options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-            options.AddPolicy(AuthEndpoints.LoginRateLimitPolicy, httpContext =>
+            options.AddPolicy(AuthController.LoginRateLimitPolicy, httpContext =>
                 RateLimitPartition.GetFixedWindowLimiter(
                     httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
                     _ => new FixedWindowRateLimiterOptions

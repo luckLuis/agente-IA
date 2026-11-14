@@ -1,6 +1,10 @@
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Filters;
+using SqlGraphCopilot.Application.Abstractions;
+using SqlGraphCopilot.Application.Usage;
 using SqlGraphCopilot.Domain.Exceptions;
+using System.Diagnostics;
 
 namespace SqlGraphCopilot.Api.Http;
 
@@ -65,4 +69,108 @@ public static class SecurityHeadersExtensions
             }
             await next();
         });
+}
+
+public sealed class UsageActionFilter : IAsyncActionFilter
+{
+    private readonly IUsageTracker _tracker;
+
+    public UsageActionFilter(IUsageTracker tracker)
+    {
+        _tracker = tracker;
+    }
+
+    public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
+    {
+        UsageContext usage = new();
+        UsageContext.Current = usage;
+        Stopwatch watch = Stopwatch.StartNew();
+        ActionExecutedContext executed = await next();
+        watch.Stop();
+
+        if (executed.Exception is not null && !executed.ExceptionHandled)
+        {
+            return;
+        }
+
+        try
+        {
+            object? value = executed.Result is ObjectResult objectResult ? objectResult.Value : null;
+            Type? type = value?.GetType();
+            System.Reflection.PropertyInfo? engineProperty = type?.GetProperty("Engine");
+            System.Reflection.PropertyInfo? replyProperty = type?.GetProperty("Reply");
+            if (value is not null && engineProperty is not null && replyProperty is not null)
+            {
+                string engine = engineProperty.GetValue(value)?.ToString() ?? "desconocido";
+                string reply = replyProperty.GetValue(value) as string ?? string.Empty;
+                string? realIntent = type!.GetProperty("Intent")?.GetValue(value)?.ToString();
+                string intent = realIntent is not null ? MapIntent(realIntent) : GuessIntent(FindMessage(context));
+                Record(usage, engine, reply, intent, (int)watch.ElapsedMilliseconds);
+            }
+        }
+        catch { }
+    }
+
+    private void Record(UsageContext usage, string engine, string reply, string intent, int latencyMs)
+    {
+        bool deterministic = engine.Equals("deterministic", StringComparison.OrdinalIgnoreCase);
+        if (deterministic) engine = "deterministic";
+        bool fallback = engine.StartsWith("deterministic-", StringComparison.OrdinalIgnoreCase);
+        bool real = usage.ProviderPromptTokens is not null;
+
+        int input = deterministic ? 0 : usage.ProviderPromptTokens ?? _tracker.EstimateTokens(usage.PromptChars);
+        int output = deterministic || fallback ? 0 : usage.ProviderCompletionTokens ?? _tracker.EstimateTokens(reply.Length);
+        int savedMinify = _tracker.EstimateTokens(usage.MinifiedSavedChars);
+        int savedAvoided = deterministic ? _tracker.Options.AvoidedTokensPerDeterministicAnswer : 0;
+
+        if (usage.CacheHit)
+        {
+            savedAvoided = input + output;
+            input = 0;
+            output = 0;
+        }
+
+        _tracker.Record(new UsageEntry(
+            At: DateTimeOffset.UtcNow,
+            Intent: intent,
+            Engine: usage.CacheHit ? "cache" : engine,
+            LatencyMs: latencyMs,
+            InputTokens: input,
+            OutputTokens: output,
+            Estimated: !deterministic && !real,
+            SavedByMinify: savedMinify,
+            SavedByAvoidingLlm: savedAvoided,
+            CacheHit: usage.CacheHit,
+            ManualMinutes: _tracker.ManualMinutesFor(intent)));
+    }
+
+    private static string? FindMessage(ActionExecutingContext context)
+    {
+        foreach (object? argument in context.ActionArguments.Values)
+        {
+            string? message = argument?.GetType().GetProperty("Message")?.GetValue(argument) as string;
+            if (message is not null) return message;
+        }
+        return null;
+    }
+
+    private static string MapIntent(string intent) => intent switch
+    {
+        "MigrateToCode" => "migrate",
+        "ExplainLogic" or "Explain" => "explain",
+        "Impact" => "impact",
+        "SinglePointsOfFailure" or "Coupling" or "Redundancy" or "Bottlenecks" or "BrokenReferences" or "Overview" => "analysis",
+        _ => "general"
+    };
+
+    private static string GuessIntent(string? message)
+    {
+        string text = (message ?? string.Empty).ToLowerInvariant();
+        if (text.Contains("migr")) return "migrate";
+        if (text.Contains("explic") || text.Contains("qué hace") || text.Contains("que hace") || text.Contains("lógica") || text.Contains("logica")) return "explain";
+        if (text.Contains("impacto") || text.Contains("rompe") || text.Contains("modifico") || text.Contains("afecta")) return "impact";
+        if (text.Contains("duplic") || text.Contains("redundan") || text.Contains("diagnóstico") || text.Contains("diagnostico")
+            || text.Contains("acoplamiento") || text.Contains("cuello") || text.Contains("fallo")) return "analysis";
+        return "general";
+    }
 }
