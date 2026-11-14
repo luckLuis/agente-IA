@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SqlGraphCopilot · Ingreso</title>
+    <link rel="stylesheet" href="/login/login.css">
+</head>
+<body>
+    <main class="card">
+        <h1>SqlGraphCopilot</h1>
+        <p class="sub">Acceso de validación · DEV</p>
+
+        <form id="loginForm" novalidate>
+            <label for="username">Usuario</label>
+            <input id="username" name="username" required autocomplete="username" autofocus>
+
+            <label for="password">Contraseña</label>
+            <input id="password" name="password" type="password" required autocomplete="current-password">
+
+            <p id="error" class="error" role="alert" hidden></p>
+
+            <button id="submit" type="submit">Ingresar</button>
+        </form>
+    </main>
+
+    <script src="/login/login.js"></script>
+</body>
+</html>

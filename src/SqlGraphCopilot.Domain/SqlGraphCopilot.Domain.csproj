@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>SqlGraphCopilot.Domain</RootNamespace>
+    <Description>Núcleo del dominio: grafo de dependencias SQL, claves de objeto, índice en memoria y excepciones. No depende de ningún otro proyecto.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="SqlGraphCopilot.Tests" />
+  </ItemGroup>
+
+</Project>

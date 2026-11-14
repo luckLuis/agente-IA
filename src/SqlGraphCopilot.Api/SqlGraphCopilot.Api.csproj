@@ -11,7 +11,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\SqlGraphCopilot.Core\SqlGraphCopilot.Core.csproj" />
+    <ProjectReference Include="..\SqlGraphCopilot.Application\SqlGraphCopilot.Application.csproj" />
+    <ProjectReference Include="..\SqlGraphCopilot.Infrastructure\SqlGraphCopilot.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

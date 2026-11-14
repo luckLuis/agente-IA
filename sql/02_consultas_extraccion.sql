@@ -2,7 +2,7 @@
    SqlGraphCopilot · 02 · Consultas de extracción (las mismas que ejecuta la API)
    -----------------------------------------------------------------------------
    Úselas para revisión con DBA / seguridad o para validar resultados a mano.
-   Fuente en el código: src/SqlGraphCopilot.Core/Metadata/SqlCatalogQueries.cs
+   Fuente en el código: src/SqlGraphCopilot.Infrastructure/SqlServer/SqlCatalogQueries.cs
    Ninguna lee datos de negocio: solo vistas de catálogo sys.*
    ============================================================================= */
 

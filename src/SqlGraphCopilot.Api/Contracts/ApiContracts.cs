@@ -1,6 +1,6 @@
-using SqlGraphCopilot.Core.Domain;
-using SqlGraphCopilot.Core.Exploration;
-using SqlGraphCopilot.Core.Graph;
+using SqlGraphCopilot.Application.Exploration;
+using SqlGraphCopilot.Domain;
+using SqlGraphCopilot.Domain.Graph;
 
 namespace SqlGraphCopilot.Api.Contracts;
 

@@ -1,12 +1,14 @@
 using System.Text.Json.Serialization;
-using SqlGraphCopilot.Api.Endpoints;
-using SqlGraphCopilot.Api.Infrastructure;
-using SqlGraphCopilot.Core.DependencyInjection;
+using SqlGraphCopilot.Api.Http;
+using SqlGraphCopilot.Application.DependencyInjection;
+using SqlGraphCopilot.Infrastructure.DependencyInjection;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
-// Motor completo (metadata real, índice, carga on-demand, análisis y agente). Sin mocks.
-builder.Services.AddSqlGraphCopilot(builder.Configuration);
+// Composition root: Application (casos de uso, agente, flujo, caché) + Infrastructure (SQL Server, ScriptDom, LLM, uso, verificador).
+builder.Services.AddApplication();
+builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddLoginValidation(builder.Configuration);                 // [LOGIN 1/4] NUEVA línea
 
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
@@ -14,10 +16,24 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
 });
 
+builder.Services
+    .AddControllers(options =>
+    {
+        options.Filters.Add<UsageActionFilter>();
+        options.SuppressImplicitRequiredAttributeForNonNullableReferenceTypes = true;
+    })
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+        options.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
+    });
+
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<DomainExceptionHandler>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+// Flujo de SP, verificador de migración, estadísticas de uso y caché del LLM: registrados en AddApplication()/AddInfrastructure().
 
 WebApplication app = builder.Build();
 
@@ -36,16 +52,15 @@ else
 }
 
 app.UseHttpsRedirection();
+app.UseLoginValidation();                                                   // [LOGIN 2/4] NUEVA línea (ANTES de wwwroot)
 app.UseDefaultFiles();   // wwwroot/index.html (el HTML ya no vive en un string de C#)
 app.UseStaticFiles();
 
-RouteGroupBuilder api = app.MapGroup("/api");
-api.MapCatalogEndpoints();
-api.MapGraphEndpoints();
-api.MapAnalysisEndpoints();
-api.MapCopilotEndpoints();
+app.MapControllers();
 
-app.MapGet("/health", () => Results.Ok(new { status = "ok" })).ExcludeFromDescription();
+app.MapGet("/health", () => Results.Ok(new { status = "ok" }))
+    .AllowAnonymous()                                                       // [LOGIN 4/4] NUEVA línea
+    .ExcludeFromDescription();
 
 app.Run();
 

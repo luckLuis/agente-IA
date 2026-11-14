@@ -15,7 +15,7 @@ flowchart LR
         EH["ProblemDetails + CSP"]
     end
 
-    subgraph Core["SqlGraphCopilot.Core (NuGet)"]
+    subgraph Core["Domain · Application · Infrastructure (NuGet)"]
         REG["InstanceRegistry<br/>instancias + alias de linked servers"]
         CR["SqlServerCatalogReader<br/>sys.* (solo metadata)"]
         IDX["DatabaseIndexCache<br/>1 índice por base · TTL"]
@@ -131,7 +131,7 @@ flowchart LR
 
 ## 6. Integración con el agente del core
 
-`SqlGraphCopilot.Core` se empaqueta como NuGet (`dotnet pack`). El agente del core lo registra con `services.AddSqlGraphCopilot(configuration)` y usa `ISqlGraphToolbox` como herramienta:
+El motor (`Domain`, `Application` e `Infrastructure`) se empaqueta como NuGet (`dotnet pack`). El agente del core lo registra con `services.AddSqlGraphCopilot(configuration)` y usa `ISqlGraphToolbox` como herramienta:
 
 | Situación en el flujo del agente | Llamada |
 |---|---|
@@ -177,3 +177,30 @@ Es la evolución "a nivel de SPs" de la base común: el agente sigue sin levanta
 - **Módulos cifrados** (`WITH ENCRYPTION`): se ven en el catálogo, pero no se pueden clasificar.
 - **SPs elegidos en tiempo de ejecución** (p. ej. Prometeus) no se ven en el análisis estático.
 - **Validación:** el motor está probado con un catálogo en memoria y con el parser real de ScriptDom; las consultas `sys.*` deben validarse en una instancia de desarrollo con `sql/03_verificacion.sql`.
+
+## Capas y dependencias entre proyectos
+
+El motor sigue Clean Architecture: las dependencias apuntan hacia adentro.
+
+```mermaid
+flowchart LR
+    API["Api"] --> APP["Application"]
+    API --> INF["Infrastructure"]
+    INF --> APP
+    INF --> DOM["Domain"]
+    APP --> DOM
+```
+
+| Proyecto | Contiene | Referencia a |
+|---|---|---|
+| **Domain** | `GraphNode`, `ObjectKey`, `DependencyGraph`, `DatabaseIndex`, excepciones | nada |
+| **Application** | Agente, análisis de impacto, explorador, flujo de SP, `DatabaseIndexBuilder/Cache`, `DependencyClassifier`, `LlmResponseCache`, `UsageContext`, opciones y **puertos** | Domain |
+| **Infrastructure** | `SqlServerCatalogReader`, `InstanceRegistry`, `TSqlParsingService` y analizador de flujo (ScriptDom), clientes LLM, `UsageTracker` (archivo .jsonl), `MigrationVerifier` (`dotnet test`) | Application, Domain |
+| **Api** | Endpoints, contratos, login, ProblemDetails/CSP; *composition root* | Application, Infrastructure |
+
+Puertos definidos en Application (`Abstractions/`): `ICatalogReader`, `IInstanceRegistry`, `ITSqlParsingService`, `ILlmClient`,
+`IProcedureFlowAnalyzer`, `IMigrationVerifier`, `IUsageTracker`.
+
+Registro de servicios: `AddApplication()` (casos de uso, caché del LLM, flujo) y `AddInfrastructure(configuration)`
+(implementaciones de los puertos y las secciones de configuración `SqlGraphCopilot`, `SqlGraphCopilot:Llm`, `LlmCache`, `Usage`, `MigrationVerifier`).
+`AddSqlGraphCopilot(configuration)` llama a ambos y se conserva para los consumidores del NuGet.

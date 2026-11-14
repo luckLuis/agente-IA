@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>SqlGraphCopilot.Infrastructure</RootNamespace>
+    <!-- Empaquetable como NuGet: expone services.AddSqlGraphCopilot(configuration) igual que el antiguo Core.
+         Al empaquetar, Domain y Application se incluyen como dependencias (empaquete los tres proyectos). -->
+    <IsPackable>true</IsPackable>
+    <PackageId>SqlGraphCopilot.Infrastructure</PackageId>
+    <Description>Implementaciones del motor de grafo de dependencias SQL Server: lectura del catálogo, parser T-SQL (ScriptDom), clientes LLM, métricas de uso y verificador de migración.</Description>
+    <PackageTags>sqlserver;dependencies;graph;impact-analysis;ai-agent</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageVersion Include="Azure.Identity" Version="1.13.1" />
+    <PackageReference Include="Microsoft.Data.SqlClient" />
+    <PackageReference Include="Microsoft.SqlServer.TransactSql.ScriptDom" />
+    <PackageReference Include="Microsoft.Extensions.Http" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SqlGraphCopilot.Domain\SqlGraphCopilot.Domain.csproj" />
+    <ProjectReference Include="..\SqlGraphCopilot.Application\SqlGraphCopilot.Application.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="SqlGraphCopilot.Tests" />
+  </ItemGroup>
+
+</Project>
