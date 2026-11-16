@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Informe Ejecutivo</title>
+  <style>
+  :root{
+    --primario:{{COLOR_PRIMARIO}}; --oscuro:{{COLOR_OSCURO}}; --suave:{{COLOR_SUAVE}};
+    --texto:#1B1F23; --gris:#5B6570; --linea:#DDE3E8; --fondo:#F2F4F6; --codigo:#F4F6F8;
+    --bajo:#1E8E3E; --medio:#C98A1B; --alto:#D35400; --critico:#B42318;
+  }
+  @page{ size:A4; margin:14mm 0 16mm; }
+  @page :first{ margin:0; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; color:var(--texto); font-family:{{TIPOGRAFIA}}, "Segoe UI", system-ui, Arial, sans-serif; font-size:10pt; line-height:1.55; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  .doc{ width:210mm; margin:0 auto; background:#fff; }
+  @media screen{ body{ background:var(--fondo); } .doc{ margin:10mm auto; box-shadow:0 4px 24px rgba(0,0,0,.1); min-height:297mm; } }
+  .cab{ background:var(--oscuro); color:#fff; padding:7mm 14mm 6mm; display:flex; justify-content:space-between; align-items:center; }
+  .cab .meta{ text-align:right; font-size:8.5pt; } .cab .meta b{ display:block; font-size:11pt; }
+  .logo img, .cab img{ height:11mm; }
+  .logo-ph{ border:2px dashed rgba(255,255,255,.6); padding:2.5mm 5mm; border-radius:2mm; font-weight:700; font-size:8.5pt; letter-spacing:1px; color:#fff; }
+  .clasif{ display:inline-block; margin-top:1.5mm; background:rgba(255,255,255,.15); padding:.6mm 3mm; border-radius:10mm; font-size:7.5pt; text-transform:uppercase; letter-spacing:.5px; }
+  .franja{ height:2.2mm; background:var(--primario); }
+  .cuerpo{ padding:7mm 14mm 8mm; }
+
+  /* ===== COMPONENTES (catálogo que usa la IA) ===== */
+  .eyebrow{ color:var(--primario); font-weight:700; font-size:8.5pt; letter-spacing:1.2px; text-transform:uppercase; }
+  h1{ font-size:19pt; line-height:1.15; margin:1mm 0 1mm; color:var(--oscuro); }
+  .sub{ color:var(--gris); font-size:10pt; margin:0 0 4.5mm; }
+  h2{ font-size:12.5pt; color:var(--oscuro); margin:5mm 0 2.5mm; padding-bottom:1.2mm; border-bottom:1.5px solid var(--linea); display:flex; align-items:center; gap:2.5mm; break-after:avoid; }
+  h2::before{ content:""; width:1.4mm; height:4.5mm; background:var(--primario); border-radius:1mm; flex:none; }
+  h3{ font-size:11pt; color:var(--oscuro); margin:5mm 0 2mm; break-after:avoid; }
+  p{ margin:0 0 3mm; }
+  .fila{ display:grid; grid-template-columns:1.6fr 1fr; gap:6mm; align-items:start; }
+  .dos{ display:grid; grid-template-columns:1fr 1fr; gap:6mm; align-items:start; }
+
+  .kpis{ display:grid; grid-template-columns:repeat(4,1fr); gap:3.5mm; break-inside:avoid; }
+  .kpi{ border:1px solid var(--linea); border-radius:2.5mm; padding:3.5mm; }
+  .kpi .v{ font-size:20pt; font-weight:700; color:var(--oscuro); line-height:1.05; }
+  .kpi .e{ font-size:8.5pt; color:var(--gris); margin-top:1mm; }
+  .kpi .t{ font-size:8pt; font-weight:700; margin-top:2mm; color:var(--gris); }
+  .kpi .t.bien{ color:var(--bajo); } .kpi .t.mal{ color:var(--critico); }
+  .kpi.destacado{ background:var(--oscuro); border-color:var(--oscuro); }
+  .kpi.destacado .v, .kpi.destacado .e, .kpi.destacado .t{ color:#fff; }
+
+  .riesgo{ border-radius:2.5mm; padding:4.5mm; background:var(--suave); break-inside:avoid; }
+  .riesgo .lbl{ font-size:8pt; color:var(--gris); text-transform:uppercase; letter-spacing:1px; font-weight:700; }
+  .riesgo .niv{ font-size:17pt; font-weight:800; margin:1mm 0 2.5mm; }
+  .medidor{ height:3mm; background:#fff; border-radius:2mm; overflow:hidden; border:1px solid var(--linea); }
+  .medidor i{ display:block; height:100%; }
+  .riesgo p{ font-size:9pt; margin:2.5mm 0 0; }
+
+  .hl{ list-style:none; margin:0; padding:0; display:grid; gap:1.8mm; counter-reset:hl; }
+  .hl li{ counter-increment:hl; position:relative; padding-left:9mm; min-height:6mm; }
+  .hl li::before{ content:counter(hl); position:absolute; left:0; top:0; width:6mm; height:6mm; border-radius:50%; background:var(--primario); color:#fff; font-size:8.5pt; font-weight:700; display:flex; align-items:center; justify-content:center; }
+
+  table.tabla{ width:100%; border-collapse:collapse; font-size:9pt; margin-bottom:3mm; }
+  .tabla th{ text-align:left; background:var(--oscuro); color:#fff; font-weight:600; padding:2mm 2.5mm; }
+  .tabla td{ padding:1.8mm 2.5mm; border-bottom:1px solid var(--linea); vertical-align:top; }
+  .tabla tr:nth-child(even) td{ background:#FAFBFC; }
+  .tabla tr{ break-inside:avoid; }
+  .tabla .num{ text-align:right; white-space:nowrap; }
+  .tabla.kv td:first-child{ width:34%; font-weight:600; color:var(--oscuro); }
+
+  .chip{ display:inline-flex; align-items:center; gap:1.5mm; font-weight:700; font-size:8.5pt; white-space:nowrap; }
+  .chip::before{ content:""; width:2.6mm; height:2.6mm; border-radius:50%; background:currentColor; }
+  .bajo{ color:var(--bajo); } .medio{ color:var(--medio); } .alto{ color:var(--alto); } .critico{ color:var(--critico); }
+  .bg-bajo{ background:var(--bajo) !important; } .bg-medio{ background:var(--medio) !important; } .bg-alto{ background:var(--alto) !important; } .bg-critico{ background:var(--critico) !important; } .bg-marca{ background:var(--primario) !important; }
+  .sev{ display:inline-block; padding:.4mm 2.5mm; border-radius:1.5mm; color:#fff; font-weight:700; font-size:7.5pt; text-transform:uppercase; letter-spacing:.4px; }
+  .prio{ display:inline-block; min-width:9mm; text-align:center; padding:.5mm 2mm; border-radius:1.5mm; font-weight:700; font-size:8pt; color:#fff; }
+  .p1{ background:var(--critico); } .p2{ background:var(--alto); } .p3{ background:var(--medio); }
+  .var{ font-weight:700; } .var.bien{ color:var(--bajo); } .var.mal{ color:var(--critico); }
+  code, .mono{ font-family:Consolas, "Cascadia Mono", monospace; font-size:8pt; }
+  code{ background:var(--codigo); border:1px solid var(--linea); border-radius:1mm; padding:.2mm 1.5mm; }
+  .chips{ display:flex; flex-wrap:wrap; gap:1.5mm; }
+
+  .barras{ break-inside:avoid; margin:1mm 0 3mm; }
+  .barras .b{ display:grid; grid-template-columns:34mm 1fr 16mm; gap:3mm; align-items:center; margin:1.2mm 0; font-size:9pt; }
+  .barras .t{ height:4mm; background:var(--codigo); border-radius:1mm; overflow:hidden; }
+  .barras .t i{ display:block; height:100%; background:var(--primario); }
+  .barras .r{ text-align:right; font-weight:700; }
+
+  .columnas{ display:flex; align-items:flex-end; gap:4mm; height:45mm; padding:0 2mm; border-bottom:1px solid var(--linea); margin:3mm 0 1mm; break-inside:avoid; }
+  .columnas .c{ flex:1; display:flex; flex-direction:column; justify-content:flex-end; align-items:center; height:100%; font-size:8pt; }
+  .columnas .c i{ display:block; width:70%; background:var(--primario); border-radius:1mm 1mm 0 0; }
+  .columnas .c b{ margin-bottom:1mm; }
+  .columnas-etq{ display:flex; gap:4mm; padding:0 2mm; font-size:8pt; color:var(--gris); margin-bottom:4mm; }
+  .columnas-etq span{ flex:1; text-align:center; }
+
+  .destaque{ background:var(--oscuro); color:#fff; border-radius:3mm; padding:4.5mm 6mm; margin:4mm 0; break-inside:avoid; }
+  .destaque .eyebrow{ color:#9FD8B8; }
+  .destaque p{ font-size:11.5pt; margin:2mm 0 0; }
+
+  .hallazgo{ border:1px solid var(--linea); border-left:1.6mm solid var(--primario); border-radius:2mm; padding:4mm 5mm; margin-bottom:4mm; break-inside:avoid; }
+  .hallazgo.critico{ border-left-color:var(--critico); } .hallazgo.alto{ border-left-color:var(--alto); } .hallazgo.medio{ border-left-color:var(--medio); } .hallazgo.bajo{ border-left-color:var(--bajo); }
+  .hallazgo.critico, .hallazgo.alto, .hallazgo.medio, .hallazgo.bajo{ color:var(--texto); }
+  .hallazgo .top{ display:flex; justify-content:space-between; align-items:center; font-size:8.5pt; color:var(--gris); }
+  .hallazgo h4{ margin:1mm 0 2mm; font-size:11pt; color:var(--texto); }
+  .lbl{ font-size:7.5pt; color:var(--gris); text-transform:uppercase; letter-spacing:.8px; font-weight:700; margin:2mm 0 1mm; }
+  .ruta{ display:flex; flex-wrap:wrap; align-items:center; gap:1.5mm; background:var(--codigo); border-radius:1.5mm; padding:2.5mm; }
+  .ruta code{ background:#fff; } .ruta .fl{ color:var(--gris); }
+  .reco{ background:var(--suave); border-radius:1.5mm; padding:2.5mm 3.5mm; font-size:9pt; margin-top:2.5mm; }
+
+  .ficha{ border:1px solid var(--linea); border-radius:2mm; margin-bottom:4mm; overflow:hidden; break-inside:avoid; }
+  .ficha .h{ background:var(--suave); padding:3mm 4mm; display:flex; justify-content:space-between; font-size:8pt; color:var(--gris); }
+  .ficha .h b{ font-family:Consolas, monospace; font-size:10pt; color:var(--oscuro); }
+  .ficha .cuerpo-f{ display:grid; grid-template-columns:1fr 1fr; gap:4mm; padding:3.5mm 4mm; font-size:9pt; }
+
+  .portada{ background:var(--oscuro); color:#fff; height:297mm; display:flex; flex-direction:column; justify-content:space-between; break-after:page; }
+  .portada .top{ padding:16mm 16mm 0; display:flex; justify-content:space-between; align-items:center; }
+  .portada .centro{ padding:0 16mm; }
+  .portada .tipo{ color:#9FD8B8; font-weight:700; letter-spacing:2px; text-transform:uppercase; font-size:10pt; }
+  .portada h1{ color:#fff; font-size:30pt; margin:3mm 0 4mm; }
+  .portada .sub{ color:#fff; opacity:.85; font-size:12pt; }
+  .portada .datos{ display:grid; grid-template-columns:repeat(4,1fr); border-top:1px solid rgba(255,255,255,.2); margin:0 16mm; padding:6mm 0 14mm; gap:4mm; font-size:10.5pt; font-weight:700; }
+  .portada .datos span{ display:block; font-size:7.5pt; opacity:.7; text-transform:uppercase; letter-spacing:1px; font-weight:400; }
+  .portada .franja{ height:3mm; }
+  .indice{ list-style:none; padding:0; margin:0 0 4mm; }
+  .indice li{ padding:2mm 0; border-bottom:1px dotted var(--linea); }
+  .indice a{ color:var(--texto); text-decoration:none; }
+  .indice li.sub{ padding-left:8mm; font-size:9pt; color:var(--gris); margin:0; }
+
+  .firmas{ display:grid; grid-template-columns:1fr 1fr; gap:10mm; margin-top:7mm; break-inside:avoid; }
+  .firmas div{ border-top:1px solid var(--texto); padding-top:1.5mm; font-size:8.5pt; color:var(--gris); }
+  .nota{ font-size:8pt; color:var(--gris); }
+  .salto{ break-after:page; height:0; }
+  </style>
+</head>
+<body>
+  <div class="doc">
+    <header class="cab">
+      <div class="logo">{{LOGO}}</div>
+      <div class="meta"><b>Informe Ejecutivo</b>{{FECHA}}<br><span class="clasif">{{CLASIFICACION}}</span></div>
+    </header>
+    <div class="franja"></div>
+    <main class="cuerpo">
+      <!-- ZONA_IA_INICIO -->
+      <!--
+      ============ CATÁLOGO DE COMPONENTES (la IA borra este comentario y escribe el informe) ============
+      Encabezado:     <div class="eyebrow">PROYECTO</div> <h1>Título</h1> <p class="sub">Subtítulo</p>
+      Sección:        <h2>Nombre de sección</h2>   Subtítulo: <h3>...</h3>   Texto: <p>...</p>
+      KPIs (4):       <div class="kpis"><div class="kpi"><div class="v">37</div><div class="e">Nodos críticos</div><div class="t mal">▲ +5</div></div> ... </div>
+                      kpi principal: class="kpi destacado"  ·  tendencia: class="t bien" | "t mal" | "t"
+      2 columnas:     <div class="fila">(ancha + angosta)</div>   o   <div class="dos">(mitad + mitad)</div>
+      Riesgo global:  <div class="riesgo"><div class="lbl">Riesgo global</div><div class="niv alto">ALTO</div>
+                      <div class="medidor"><i class="bg-alto" style="width:68%"></i></div><p>Comentario</p></div>
+      Highlights:     <ol class="hl"><li>Texto</li> ... </ol>   (máx. 3)
+      Tabla:          <table class="tabla"><thead><tr><th>..</th></tr></thead><tbody><tr><td>..</td><td class="num">14</td></tr></tbody></table>
+      Semáforo:       <span class="chip critico">Crítico</span>  (bajo | medio | alto | critico)
+      Prioridad:      <span class="prio p1">P1</span>  (p1 | p2 | p3)
+      Variación:      <span class="var bien">-25%</span>  (bien | mal)
+      Barras horiz.:  <div class="barras"><div class="b"><span>Pagos</span><span class="t"><i style="width:100%"></i></span><span class="r">14</span></div></div>
+                      (width = valor / valor máximo × 100)
+      Columnas:       <div class="columnas"><div class="c"><b>32</b><i style="height:86%"></i></div> ...</div>
+                      <div class="columnas-etq"><span>Oct</span> ...</div>
+      Bloque oscuro:  <div class="destaque"><div class="eyebrow">Outlook</div><p>Texto</p></div>
+      Nodo del grafo: <code>tbl:Pagos</code>
+      Firmas:         <div class="firmas"><div>Revisado por:</div><div>Aprobado por:</div></div>
+      Salto de página:<div class="salto"></div>   (máx. 1 en el ejecutivo)
+      ===================================================================================================
+      -->
+      <!-- ZONA_IA_FIN -->
+    </main>
+  </div>
+</body>
+</html>
