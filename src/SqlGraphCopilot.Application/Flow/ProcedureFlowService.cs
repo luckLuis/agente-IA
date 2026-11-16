@@ -4,7 +4,6 @@ using SqlGraphCopilot.Application.Catalog;
 
 namespace SqlGraphCopilot.Application.Flow;
 
-/// <summary>Obtiene el código de un procedimiento desde el catálogo y lo analiza. Registrar como singleton.</summary>
 public sealed class ProcedureFlowService
 {
     private static readonly TimeSpan IndexLifetime = TimeSpan.FromMinutes(5);
@@ -19,7 +18,6 @@ public sealed class ProcedureFlowService
         _analyzer = analyzer;
     }
 
-    /// <summary>Null si el objeto no existe en la base.</summary>
     public async Task<ProcedureFlowReport?> AnalyzeAsync(string instance, string database, string schema, string name, CancellationToken cancellationToken)
     {
         int? objectId = await ResolveAsync(instance, database, schema, name, cancellationToken);
@@ -29,10 +27,16 @@ public sealed class ProcedureFlowService
         if (string.IsNullOrWhiteSpace(definition))
         {
             return new ProcedureFlowReport(schema, name, [], [], [],
-                ["No se puede leer el código del objeto (está cifrado o no hay permiso VIEW DEFINITION)."]);
+                ["No se puede leer el código del objeto (está cifrado o no hay permiso VIEW DEFINITION)."], []);
         }
 
         return _analyzer.Analyze(schema, name, definition);
+    }
+
+    public async Task<string?> GetDefinitionAsync(string instance, string database, string schema, string name, CancellationToken cancellationToken)
+    {
+        int? objectId = await ResolveAsync(instance, database, schema, name, cancellationToken);
+        return objectId is null ? null : await _catalog.ReadDefinitionAsync(instance, database, objectId.Value, cancellationToken);
     }
 
     private async Task<int?> ResolveAsync(string instance, string database, string schema, string name, CancellationToken cancellationToken)
@@ -51,11 +55,5 @@ public sealed class ProcedureFlowService
         }
 
         return entry.Ids.TryGetValue($"{schema}.{name}", out int id) ? id : null;
-    }
-
-    public async Task<string?> GetDefinitionAsync(string instance, string database, string schema, string name, CancellationToken cancellationToken)
-    {
-        int? objectId = await ResolveAsync(instance, database, schema, name, cancellationToken);
-        return objectId is null ? null : await _catalog.ReadDefinitionAsync(instance, database, objectId.Value, cancellationToken);
     }
 }

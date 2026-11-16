@@ -1,20 +1,19 @@
-// Panel "Datos de entrada": parámetros de un SP y condiciones para llegar a cada EXEC / escritura.
-// Los valores se evalúan en el navegador contra las condiciones que extrajo el backend.
 
 const API_BASE = '/api';   // ajustar si la API cuelga de otra ruta
 
-export async function fetchFlowInputs({ instance, database, schema, name }) {
-  const query = new URLSearchParams({ instance, database, schema, name });
-  const response = await fetch(`${API_BASE}/flow/inputs?${query}`);
+async function readJson(response) {
   if (!response.ok) {
     let message = `Error ${response.status}`;
-    try { message = (await response.json()).message ?? message; } catch { /* sin cuerpo JSON */ }
+    try { const body = await response.json(); message = body.message ?? body.detail ?? body.title ?? message; } catch { }
     throw new Error(message);
   }
   return response.json();
 }
 
-// ---- Evaluación ----------------------------------------------------------------------------
+export async function fetchFlowInputs({ instance, database, schema, name }) {
+  const query = new URLSearchParams({ instance, database, schema, name });
+  return readJson(await fetch(`${API_BASE}/flow/inputs?${query}`));
+}
 
 const isNumber = (text) => text !== '' && Number.isFinite(Number(text));
 
@@ -28,7 +27,6 @@ function compare(a, b) {
   return a.localeCompare(b, undefined, { sensitivity: 'accent' });   // SQL Server: colación insensible a mayúsculas
 }
 
-/** true / false / null (desconocido) para una restricción simple. */
 function checkConstraint(constraint, raw) {
   const input = parseValue(raw);
   if (!input.provided) return null;
@@ -51,7 +49,6 @@ function checkConstraint(constraint, raw) {
   }
 }
 
-/** 'yes' | 'no' | 'maybe' para una condición. values: { '@nombre': 'texto' } (claves en minúsculas). */
 export function evaluateCondition(condition, values) {
   let unknown = false;
   for (const constraint of condition.constraints) {
@@ -60,7 +57,6 @@ export function evaluateCondition(condition, values) {
     if (result === null) unknown = true;
   }
   if (unknown) return 'maybe';
-  // Todo lo evaluable se cumple; si hay partes que dependen de datos (tablas, variables, funciones) no se puede asegurar.
   return condition.exact && condition.constraints.length > 0 ? 'yes' : 'maybe';
 }
 
@@ -74,13 +70,10 @@ export function evaluateBranch(branch, values) {
   return status;
 }
 
-// ---- Valores sugeridos y script ------------------------------------------------------------
-
 const baseType = (type) => type.toLowerCase().replace(/[\[\]]/g, '').replace(/\(.*\)/, '').trim();
 const NUMERIC_TYPES = new Set(['int', 'bigint', 'smallint', 'tinyint', 'decimal', 'numeric', 'float', 'real', 'money', 'smallmoney', 'bit']);
 const UNICODE_TYPES = new Set(['nvarchar', 'nchar', 'ntext']);
 
-/** Valor de ejemplo válido para el tipo (cuando ninguna condición exige uno concreto). */
 function sampleFor(type) {
   const t = baseType(type);
   if (NUMERIC_TYPES.has(t)) return '1';
@@ -91,7 +84,6 @@ function sampleFor(type) {
   return 'X';
 }
 
-/** Literal T-SQL para un valor escrito por el usuario (null = NULL). */
 function sqlLiteral(type, raw) {
   const input = parseValue(raw);
   if (!input.provided || input.value === null) return 'NULL';
@@ -100,11 +92,6 @@ function sqlLiteral(type, raw) {
   return `${UNICODE_TYPES.has(t) ? 'N' : ''}'${input.value.replace(/'/g, "''")}'`;
 }
 
-/**
- * Busca valores de entrada que cumplan las condiciones de una rama.
- * Devuelve { values, ok, dataNotes }: ok = false si las condiciones se contradicen;
- * dataNotes = condiciones que dependen de datos de la base (no se pueden fijar con parámetros).
- */
 export function suggestValues(report, branch) {
   const byParam = new Map();
   for (const condition of branch.conditions) {
@@ -132,7 +119,6 @@ export function suggestValues(report, branch) {
     if (pick === undefined) ok = false; else values[key] = pick;
   }
 
-  // Los obligatorios sin condición necesitan algún valor para poder ejecutar el SP.
   for (const parameter of report.parameters) {
     const key = parameter.name.toLowerCase();
     if (!parameter.isOptional && !parameter.isOutput && !(key in values)) values[key] = sampleFor(parameter.dataType);
@@ -142,7 +128,6 @@ export function suggestValues(report, branch) {
   return { values, ok, dataNotes };
 }
 
-/** Script T-SQL listo para pegar en SSMS. rollback: envuelve en transacción y la deshace. */
 export function buildScript(report, values, { database = null, rollback = true } = {}) {
   const proc = `[${report.schema}].[${report.name}]`;
   const outputs = report.parameters.filter((p) => p.isOutput);
@@ -166,7 +151,6 @@ export function buildScript(report, values, { database = null, rollback = true }
   if (database) lines.push(`USE [${database}];`, 'GO', '');
   for (const p of outputs) lines.push(`DECLARE ${p.name}_out ${p.dataType};`);
   if (rollback) lines.push('BEGIN TRANSACTION;   -- prueba: todo se deshace al final');
-  // TRY/CATCH: si el SP lanza THROW/RAISERROR (p. ej. una validación), el error se muestra y el script sigue limpio.
   lines.push('BEGIN TRY', `    ${exec}`);
   if (outputs.length) lines.push(`    SELECT ${outputs.map((p) => `${p.name}_out AS [${p.name.slice(1)}]`).join(', ')};`);
   lines.push('    SELECT 0 AS CodigoError, \'OK\' AS Resultado;', 'END TRY', 'BEGIN CATCH',
@@ -175,10 +159,6 @@ export function buildScript(report, values, { database = null, rollback = true }
   return lines.join('\n');
 }
 
-/**
- * Escenarios de prueba ya resueltos: valores de entrada que recorren cada rama y cada validación que corta.
- * Cada escenario trae lo que se ejecutaría realmente con esos valores (se reevalúan todas las ramas).
- */
 export function buildScenarios(report) {
   const found = new Map();
   const add = (title, suggestion) => {
@@ -206,7 +186,6 @@ export function buildScenarios(report) {
   });
 }
 
-/** Un solo script con todos los escenarios, cada uno con los valores ya cargados y lo que se espera. */
 export function buildAllScenarios(report, { database = null, rollback = true } = {}) {
   const scenarios = buildScenarios(report);
   if (scenarios.length === 0) return buildScript(report, {}, { database, rollback });
@@ -232,77 +211,145 @@ export function buildAllScenarios(report, { database = null, rollback = true } =
   return out.join('\n');
 }
 
-// ---- Panel ---------------------------------------------------------------------------------
+const KIND_BADGE = {
+  decision: 'Decisión', then: 'Sí', else: 'No', loop: 'Ciclo', try: 'Intenta', catch: 'Error',
+  exec: 'Llama', write: 'Escribe', read: 'Lee', transaction: 'Transacción', return: 'Fin', throw: 'Error', dynamic: 'Dinámico'
+};
+const BRANCH_KINDS = new Set(['then', 'else', 'loop', 'catch']);
+const MARKABLE_KINDS = new Set(['exec', 'write', 'read']);
+const ACTION_KINDS = new Set(['exec', 'write', 'read', 'transaction', 'return', 'throw', 'dynamic']);
+const STATUS_LABEL = { yes: 'Se ejecutaría', maybe: 'Depende de datos', no: 'No se ejecuta', none: '' };
+const CONTAINER_STATUS_LABEL = { yes: 'Se evalúa', maybe: 'Depende de datos', no: 'No se evalúa', none: '' };
+const BRANCH_STATUS_LABEL = { yes: 'Se cumple', maybe: 'Depende de datos', no: 'No se cumple', none: '' };
 
-const STATUS_LABEL = { yes: 'Se ejecuta', maybe: 'Depende', no: 'No se ejecuta', none: '' };
-const KIND_LABEL = { exec: 'EXEC', write: 'Escribe', dynamic: 'SQL dinámico' };
+const unique = (items) => [...new Set(items)];
+const plural = (count, one, many) => `${count} ${count === 1 ? one : many}`;
 
-/**
- * Dibuja el panel dentro de `container`. onSimulate(branches) recibe las acciones que se ejecutarían
- * (estado 'yes' o 'maybe') cuando el usuario pulsa «Marcar en la red».
- */
+export function summarize(report) {
+  const steps = report.steps ?? [];
+  const targetsOf = (kind) => unique(steps.filter((s) => s.kind === kind).flatMap((s) => s.targets));
+  const required = report.parameters.filter((p) => !p.isOptional && !p.isOutput);
+  return {
+    required,
+    reads: targetsOf('read'),
+    writes: targetsOf('write'),
+    calls: targetsOf('exec'),
+    cuts: report.guards.length,
+    dynamic: steps.some((s) => s.kind === 'dynamic'),
+    transactions: steps.some((s) => s.kind === 'transaction')
+  };
+}
+
+export function describeProcedure(report) {
+  const info = summarize(report);
+  const parts = [];
+  const total = report.parameters.length;
+  parts.push(total === 0
+    ? 'No recibe parámetros.'
+    : `Recibe ${plural(total, 'parámetro', 'parámetros')}${info.required.length ? ` (${info.required.length} obligatorio${info.required.length === 1 ? '' : 's'})` : ', todos opcionales'}.`);
+  if (info.cuts) parts.push(`Tiene ${plural(info.cuts, 'validación', 'validaciones')} que ${info.cuts === 1 ? 'puede' : 'pueden'} cortar la ejecución antes de terminar.`);
+  if (info.reads.length) parts.push(`Lee: ${info.reads.join(', ')}.`);
+  if (info.writes.length) parts.push(`Modifica: ${info.writes.join(', ')}.`);
+  if (info.calls.length) parts.push(`Llama a: ${info.calls.join(', ')}.`);
+  if (info.transactions) parts.push('Maneja transacciones propias.');
+  if (info.dynamic) parts.push('Usa SQL dinámico: parte de lo que hace no se puede deducir leyendo el código.');
+  if (!info.reads.length && !info.writes.length && !info.calls.length) parts.push('No lee ni modifica tablas ni llama a otros procedimientos.');
+  return parts;
+}
+
+export function simulate(report, values) {
+  const steps = report.steps ?? [];
+  const result = new Map();
+  let order = 0;
+  for (const step of steps) {
+    const status = evaluateBranch(step, values);
+    const numbered = status === 'yes' && ACTION_KINDS.has(step.kind);
+    result.set(step.id, { status, order: numbered ? ++order : null });
+  }
+  return result;
+}
+
 export function mountInputsPanel(container, report, { escapeHtml, onSimulate, onPickTarget, database = null }) {
   const esc = escapeHtml;
-  const required = report.parameters.filter((p) => !p.isOptional && !p.isOutput);
-  const inputParams = report.parameters;
+  const steps = report.steps ?? [];
+  const scenarios = buildScenarios(report);
+  const summary = describeProcedure(report).map((line) => `<li>${esc(line)}</li>`).join('');
 
-  const paramRows = inputParams.map((p) => `
+  const paramRows = report.parameters.map((p) => `
     <tr>
       <td><code>${esc(p.name)}</code></td>
       <td>${esc(p.dataType)}</td>
-      <td>${p.isOutput ? '<span class="badge info">OUT</span>' : p.isOptional ? `<span class="badge">Opcional${p.defaultValue ? ` · ${esc(p.defaultValue)}` : ''}</span>` : '<span class="badge crit">Obligatorio</span>'}</td>
+      <td>${p.isOutput ? '<span class="badge info">Salida</span>' : p.isOptional ? `<span class="badge">Opcional${p.defaultValue ? ` · ${esc(p.defaultValue)}` : ''}</span>` : '<span class="badge crit">Obligatorio</span>'}</td>
       <td>${p.isOutput ? '' : `<input class="flow-input" type="text" data-param="${esc(p.name.toLowerCase())}" placeholder="valor" aria-label="${esc(p.name)}" autocomplete="off">`}</td>
     </tr>`).join('');
 
-  const conditionChips = (branch) => branch.conditions.length === 0
-    ? '<span class="chip-cond always">siempre</span>'
-    : branch.conditions.map((c) => `<span class="chip-cond${c.dependsOnData ? ' data' : ''}" title="${c.dependsOnData ? 'Depende de datos de tablas, variables o funciones' : ''}">${esc(c.text)}</span>`).join('');
+  const scenarioOptions = scenarios.map((s, i) => `<option value="${i}">${esc(s.title)}</option>`).join('');
 
-  const branchRows = report.branches.map((b, index) => `
-    <li class="flow-branch" data-branch="${index}">
-      <div class="flow-branch-head">
-        <span class="kind kind-${esc(b.kind)}">${esc(KIND_LABEL[b.kind] ?? b.kind)}</span>
-        ${b.kind === 'dynamic' ? `<span class="name">${esc(b.target)}</span>` : `<button type="button" class="link" data-target="${esc(b.target)}">${esc(b.target)}</button>`}
+  const stepRows = steps.map((step) => {
+    const targets = MARKABLE_KINDS.has(step.kind)
+      ? step.targets.map((t) => `<button type="button" class="link" data-target="${esc(t)}">${esc(t)}</button>`).join(' ') : '';
+    const args = step.arguments.length
+      ? `<div class="flow-args">con ${step.arguments.map((a) => `<code>${esc(a.name)} = ${esc(a.value)}</code>`).join(' ')}</div>` : '';
+    const badge = step.operation === 'validación' ? '<span class="badge info">validación</span>' : '';
+    return `
+    <li class="flow-step" data-step="${step.id}" data-kind="${esc(step.kind)}" style="--d:${step.depth}">
+      <div class="flow-step-head">
+        <span class="flow-step-order" data-order></span>
+        <span class="kind kind-${esc(step.kind)}">${esc(KIND_BADGE[step.kind] ?? step.kind)}</span>
+        <span class="flow-step-title">${esc(step.title)}</span>${badge}
+        <span class="flow-step-line" title="Línea del código del procedimiento">línea ${step.line}</span>
         <span class="status" data-status></span>
-        ${b.kind === 'dynamic' ? '' : `<button type="button" class="btn ghost small" data-reach="${index}" title="Rellena los valores necesarios para llegar a esta acción">Probar este flujo</button>`}
       </div>
-      <div class="flow-conds">${conditionChips(b)}</div>
-      ${b.arguments.length ? `<div class="flow-args">con ${b.arguments.map((a) => `<code>${esc(a.name)} = ${esc(a.value)}</code>`).join(' ')}</div>` : ''}
-    </li>`).join('');
-
-  const guardRows = report.guards.map((g, index) => `
-    <li class="flow-guard" data-guard="${index}"><span class="chip-cond">${esc(g.condition.text)}</span> <span class="muted">→ ${esc(g.outcome)}</span><span class="status" data-status></span></li>`).join('');
-
-  const warnings = report.warnings.map((w) => `<div class="msg warn">${esc(w)}</div>`).join('');
+      ${targets ? `<div class="flow-step-targets">${targets}</div>` : ''}${args}
+    </li>`;
+  }).join('');
 
   container.innerHTML = `
     <div class="flow-panel">
       <h3>Datos de entrada · ${esc(report.schema)}.${esc(report.name)}</h3>
-      ${warnings}
+      ${report.warnings.map((w) => `<div class="msg warn">${esc(w)}</div>`).join('')}
+
+      <h4>Qué hace este procedimiento</h4>
+      <ul class="flow-summary">${summary}</ul>
+      <details class="flow-how">
+        <summary>Cómo funciona este panel</summary>
+        <ol>
+          <li>El panel lee el código del procedimiento; no ejecuta nada en la base de datos.</li>
+          <li>Usted escribe valores de entrada y el panel evalúa, sobre las condiciones del código, qué pasos se ejecutarían y en qué orden.</li>
+          <li>Lo que depende de datos de tablas, variables o funciones se marca como «Depende de datos»: no se puede saber sin ejecutar.</li>
+          <li>«Simular y marcar en la red» anima ese recorrido sobre el grafo.</li>
+        </ol>
+      </details>
+
+      <h4>1 · Entradas</h4>
       ${report.parameters.length === 0
       ? '<div class="muted-block">Este procedimiento no recibe parámetros.</div>'
-      : `<p class="muted">${required.length
-        ? `Obligatorios: ${required.map((p) => `<code>${esc(p.name)}</code>`).join(', ')}.`
-        : 'Todos los parámetros son opcionales.'} Escriba valores para ver qué rama se ejecutaría (<code>NULL</code> para nulo; vacío = sin dato).</p>
-           <table class="flow-params"><thead><tr><th>Parámetro</th><th>Tipo</th><th></th><th>Valor</th></tr></thead><tbody>${paramRows}</tbody></table>`}
-      ${report.guards.length ? `<h4>Validaciones que cortan el flujo</h4><ul class="flow-list">${guardRows}</ul>` : ''}
-      <h4>Qué ocurre según la entrada</h4>
-      ${report.branches.length ? `<ul class="flow-list">${branchRows}</ul>` : '<div class="muted-block">No se encontraron EXEC ni escrituras.</div>'}
-      <h4>Script para validar en la base</h4>
-      <div class="flow-notes" data-notes hidden></div>
-      <label class="flow-check">Mostrar
-        <select data-script-mode>
-          <option value="all">todos los escenarios (valores ya cargados)</option>
-          <option value="current">solo los valores de los campos</option>
-        </select>
-      </label>
-      <label class="flow-check"><input type="checkbox" data-rollback checked> Envolver en transacción y deshacer (ROLLBACK)</label>
-      <pre class="flow-script" data-script></pre>
-      <div class="actions">
-        <button type="button" class="btn ghost small" data-copy>Copiar script</button>
-        <button type="button" class="btn ghost small" data-download>Descargar .sql</button>
-      </div>
-      <div class="actions"><button type="button" class="btn primary small" data-simulate ${report.branches.length ? '' : 'disabled'}>Marcar en la red</button></div>
+      : `<p class="muted">Use <code>NULL</code> para nulo; vacío = sin dato (se usa el valor por defecto si lo tiene).</p>
+         <table class="flow-params"><thead><tr><th>Parámetro</th><th>Tipo</th><th></th><th>Valor</th></tr></thead><tbody>${paramRows}</tbody></table>`}
+      ${scenarios.length ? `<label class="flow-check">Cargar un ejemplo
+        <select data-scenario><option value="">— elegir —</option>${scenarioOptions}</select></label>` : ''}
+
+      <h4>2 · Flujo paso a paso</h4>
+      <p class="muted flow-legend">Orden del código. Lo que tiene sangría depende de la decisión que lo contiene. El número indica el orden en que se ejecutaría con estos valores.</p>
+      ${steps.length ? `<ol class="flow-steps">${stepRows}</ol>` : '<div class="muted-block">No se encontraron pasos que mostrar.</div>'}
+      <div class="actions"><button type="button" class="btn primary small" data-simulate ${steps.some((s) => MARKABLE_KINDS.has(s.kind)) ? '' : 'disabled'}>Simular y marcar en la red</button></div>
+
+      <details class="flow-details">
+        <summary>Script opcional para validar en SSMS</summary>
+        <div class="flow-notes" data-notes hidden></div>
+        <label class="flow-check">Mostrar
+          <select data-script-mode>
+            <option value="all">todos los escenarios (valores ya cargados)</option>
+            <option value="current">solo los valores de los campos</option>
+          </select>
+        </label>
+        <label class="flow-check"><input type="checkbox" data-rollback checked> Envolver en transacción y deshacer (ROLLBACK)</label>
+        <pre class="flow-script" data-script></pre>
+        <div class="actions">
+          <button type="button" class="btn ghost small" data-copy>Copiar script</button>
+          <button type="button" class="btn ghost small" data-download>Descargar .sql</button>
+        </div>
+      </details>
     </div>`;
 
   const readValues = () => {
@@ -315,19 +362,18 @@ export function mountInputsPanel(container, report, { escapeHtml, onSimulate, on
   const refresh = () => {
     const values = readValues();
     const active = anyValue();
-    container.querySelectorAll('.flow-branch').forEach((row) => {
-      const status = active ? evaluateBranch(report.branches[Number(row.dataset.branch)], values) : 'none';
+    const outcome = active ? simulate(report, values) : null;
+    container.querySelectorAll('.flow-step').forEach((row) => {
+      const step = steps.find((s) => s.id === Number(row.dataset.step));
+      const info = outcome?.get(step.id);
+      const status = info?.status ?? 'none';
       row.dataset.state = status;
-      row.querySelector('[data-status]').textContent = STATUS_LABEL[status];
-    });
-    container.querySelectorAll('.flow-guard').forEach((row) => {
-      const status = active ? evaluateCondition(report.guards[Number(row.dataset.guard)].condition, values) : 'none';
-      row.dataset.state = status;
-      row.querySelector('[data-status]').textContent = status === 'yes' ? 'Con esta entrada se corta aquí' : status === 'maybe' ? 'Podría cortarse' : '';
+      const labels = BRANCH_KINDS.has(step.kind) ? BRANCH_STATUS_LABEL : (step.kind === 'decision' || step.kind === 'try') ? CONTAINER_STATUS_LABEL : STATUS_LABEL;
+      row.querySelector('[data-status]').textContent = labels[status];
+      row.querySelector('[data-order]').textContent = info?.order ? `#${info.order}` : '';
     });
   };
 
-  const notes = container.querySelector('[data-notes]');
   const script = container.querySelector('[data-script]');
   const mode = container.querySelector('[data-script-mode]');
   const updateScript = () => {
@@ -337,35 +383,29 @@ export function mountInputsPanel(container, report, { escapeHtml, onSimulate, on
       : buildScript(report, readValues(), { database, rollback });
   };
   const refreshAll = () => { refresh(); updateScript(); };
+  const fill = (values) => {
+    container.querySelectorAll('[data-param]').forEach((input) => { input.value = values[input.dataset.param] ?? ''; });
+  };
 
-  // Con los datos ya cargados del primer escenario, el panel sirve sin tocar nada.
-  const first = buildScenarios(report)[0];
-  if (first) container.querySelectorAll('[data-param]').forEach((input) => { input.value = first.values[input.dataset.param] ?? ''; });
+  if (scenarios[0]) fill(scenarios[0].values);
 
   container.addEventListener('input', (event) => {
-    if (event.target.matches('[data-param]')) mode.value = 'current';   // el usuario editó: el script sigue sus valores
+    if (event.target.matches('[data-param]')) mode.value = 'current';
     refreshAll();
   });
+
+  container.addEventListener('change', (event) => {
+    const select = event.target.closest('[data-scenario]');
+    if (!select || select.value === '') return;
+    fill(scenarios[Number(select.value)].values);
+    mode.value = 'current';
+    refreshAll();
+  });
+
   container.addEventListener('click', (event) => {
     const target = event.target.closest('[data-target]');
     if (target) onPickTarget?.(target.dataset.target);
-    const reach = event.target.closest('[data-reach]');
-    if (reach) {
-      const branch = report.branches[Number(reach.dataset.reach)];
-      const suggestion = suggestValues(report, branch);
-      container.querySelectorAll('[data-param]').forEach((input) => { input.value = suggestion.values[input.dataset.param] ?? ''; });
-      mode.value = 'current';
-      const lines = [];
-      if (!suggestion.ok) lines.push('Las condiciones de esta rama se contradicen o no se pueden cumplir solo con parámetros; revise el código.');
-      if (suggestion.dataNotes.length) {
-        lines.push('Además debe cumplirse en la base (depende de datos, no de parámetros):');
-        lines.push(...suggestion.dataNotes.map((n) => `• ${n}`));
-      }
-      notes.hidden = lines.length === 0;
-      notes.textContent = lines.join('\n');
-      refreshAll();
-      script.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
-    }
+
     if (event.target.closest('[data-download]')) {
       const blob = new Blob([script.textContent], { type: 'text/plain;charset=utf-8' });
       const link = document.createElement('a');
@@ -374,30 +414,32 @@ export function mountInputsPanel(container, report, { escapeHtml, onSimulate, on
       link.click();
       setTimeout(() => URL.revokeObjectURL(link.href), 1000);
     }
+
     if (event.target.closest('[data-copy]')) {
       const button = event.target.closest('[data-copy]');
       const done = () => { button.textContent = '¡Copiado!'; setTimeout(() => { button.textContent = 'Copiar script'; }, 1500); };
       if (navigator.clipboard?.writeText) navigator.clipboard.writeText(script.textContent).then(done, () => { });
       else { const range = document.createRange(); range.selectNodeContents(script); getSelection().removeAllRanges(); getSelection().addRange(range); document.execCommand('copy'); done(); }
     }
+
     if (event.target.closest('[data-simulate]')) {
       const values = readValues();
       const active = anyValue();
-      const chosen = report.branches
-        .map((branch) => ({ branch, status: active ? evaluateBranch(branch, values) : 'maybe' }))
-        .filter((item) => item.status !== 'no');
+      const outcome = active ? simulate(report, values) : null;
+      const chosen = steps
+        .filter((step) => MARKABLE_KINDS.has(step.kind))
+        .map((step) => ({ step, status: outcome ? outcome.get(step.id).status : 'maybe' }))
+        .filter((item) => item.status !== 'no')
+        .flatMap(({ step, status }) => step.targets
+          .filter((t) => !t.startsWith('#') && !t.startsWith('@'))
+          .map((t) => ({ branch: { kind: step.kind, target: t }, status })));
       onSimulate?.(chosen, active);
     }
   });
+
   refreshAll();
 }
 
-// ---- Petición de migración a C# ------------------------------------------------------------
-
-/**
- * Texto corto para pedir la migración. Las reglas (solo lógica, sin SQL en C#, pruebas xUnit y de paridad) viven en el
- * prompt del sistema del backend, así no se pagan tokens de más en cada petición.
- */
 export function buildMigrationPrompt(node) {
   return `Migra ${node.schema}.${node.name} a C#: solo la lógica (sin SQL en el código; los datos se quedan en los SP) y con pruebas unitarias.`;
 }

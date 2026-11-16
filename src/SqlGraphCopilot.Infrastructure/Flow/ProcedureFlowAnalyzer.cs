@@ -4,11 +4,6 @@ using SqlGraphCopilot.Application.Flow;
 
 namespace SqlGraphCopilot.Infrastructure.Flow;
 
-/// <summary>
-/// Lee el código de un procedimiento y obtiene sus parámetros y, para cada EXEC / escritura,
-/// las condiciones (IF / ELSE / WHILE / validaciones con RETURN) que deben cumplirse para llegar a ella.
-/// Es un análisis estático: no ejecuta nada.
-/// </summary>
 public static class ProcedureFlowAnalyzer
 {
     public static ProcedureFlowReport Analyze(string schema, string name, string definition)
@@ -30,7 +25,7 @@ public static class ProcedureFlowAnalyzer
         if (body is null)
         {
             warnings.Add("El objeto no es un procedimiento almacenado que el analizador pueda leer.");
-            return new ProcedureFlowReport(schema, name, [], [], [], warnings);
+            return new ProcedureFlowReport(schema, name, [], [], [], warnings, []);
         }
 
         List<FlowParameter> parameters = body.Parameters.Select(p => new FlowParameter(
@@ -41,23 +36,22 @@ public static class ProcedureFlowAnalyzer
             IsOutput: p.Modifier == ParameterModifier.Output)).ToList();
 
         Walker walker = new(definition, parameters.Select(p => p.Name).ToHashSet(StringComparer.OrdinalIgnoreCase));
-        walker.WalkList(body.StatementList?.Statements ?? [], []);
+        walker.WalkList(body.StatementList?.Statements ?? [], [], 0, 0);
 
         if (walker.Branches.Any(b => b.Kind == "dynamic"))
         {
             warnings.Add("Hay SQL dinámico (EXEC de texto o sp_executesql): sus destinos y condiciones no se pueden deducir.");
         }
 
-        return new ProcedureFlowReport(schema, name, parameters, walker.Branches, walker.Guards, warnings);
+        return new ProcedureFlowReport(schema, name, parameters, walker.Branches, walker.Guards, warnings, walker.Steps);
     }
-
-    // ---- Recorrido -------------------------------------------------------------------------
 
     private sealed class Walker
     {
         private readonly string _source;
         private readonly HashSet<string> _parameters;
         private readonly HashSet<string> _seen = new(StringComparer.OrdinalIgnoreCase);
+        private int _nextId = 1;
 
         public Walker(string source, HashSet<string> parameters)
         {
@@ -67,14 +61,14 @@ public static class ProcedureFlowAnalyzer
 
         public List<FlowBranch> Branches { get; } = new();
         public List<FlowGuard> Guards { get; } = new();
+        public List<FlowStep> Steps { get; } = new();
 
-        public void WalkList(IList<TSqlStatement> statements, List<FlowCondition> context)
+        public void WalkList(IList<TSqlStatement> statements, List<FlowCondition> context, int parent, int depth)
         {
-            // Un IF que termina con RETURN/THROW condiciona todo lo que viene después en el mismo bloque.
             List<FlowCondition> current = new(context);
             foreach (TSqlStatement statement in statements)
             {
-                Walk(statement, current);
+                Walk(statement, current, parent, depth);
 
                 if (statement is IfStatement ifs)
                 {
@@ -94,71 +88,136 @@ public static class ProcedureFlowAnalyzer
                 }
                 else if (statement is ReturnStatement or ThrowStatement)
                 {
-                    break;   // lo que sigue es código inalcanzable
+                    break;
                 }
             }
         }
 
-        private void Walk(TSqlStatement statement, List<FlowCondition> context)
+        private void Walk(TSqlStatement statement, List<FlowCondition> context, int parent, int depth)
         {
             switch (statement)
             {
                 case IfStatement ifs:
-                    Walk(ifs.ThenStatement, [.. context, Condition(ifs.Predicate, false)]);
-                    if (ifs.ElseStatement is not null)
                     {
-                        Walk(ifs.ElseStatement, [.. context, Condition(ifs.Predicate, true)]);
+                        FlowCondition yes = Condition(ifs.Predicate, false);
+                        FlowCondition no = Condition(ifs.Predicate, true);
+                        bool guard = Terminator(ifs.ThenStatement) is not null
+                            || (ifs.ElseStatement is not null && Terminator(ifs.ElseStatement) is not null);
+                        int decision = AddStep("decision", ifs, parent, depth, $"Si {Compact(Text(_source, ifs.Predicate))}",
+                            guard ? "validación" : null, [], context, [], null, false);
+
+                        List<FlowCondition> whenYes = [.. context, yes];
+                        int thenId = AddStep("then", ifs.ThenStatement, decision, depth + 1, "Si se cumple", null, [], whenYes, [], null, true);
+                        Walk(ifs.ThenStatement, whenYes, thenId, depth + 2);
+
+                        if (ifs.ElseStatement is not null)
+                        {
+                            List<FlowCondition> whenNo = [.. context, no];
+                            int elseId = AddStep("else", ifs.ElseStatement, decision, depth + 1, "Si no se cumple", null, [], whenNo, [], null, true);
+                            Walk(ifs.ElseStatement, whenNo, elseId, depth + 2);
+                        }
+                        break;
                     }
-                    break;
 
                 case BeginEndBlockStatement block:
-                    WalkList(block.StatementList.Statements, context);
+                    WalkList(block.StatementList.Statements, context, parent, depth);
                     break;
 
                 case WhileStatement loop:
-                    Walk(loop.Statement, [.. context, Condition(loop.Predicate, false)]);
-                    break;
+                    {
+                        FlowCondition repeat = Condition(loop.Predicate, false);
+                        List<FlowCondition> inside = [.. context, repeat];
+                        int loopId = AddStep("loop", loop, parent, depth, $"Repite mientras {Compact(Text(_source, loop.Predicate))}",
+                            null, [], inside, [], loop.Statement, true);
+                        Walk(loop.Statement, inside, loopId, depth + 1);
+                        break;
+                    }
 
                 case TryCatchStatement tryCatch:
-                    WalkList(tryCatch.TryStatements.Statements, context);
-                    WalkList(tryCatch.CatchStatements.Statements,
-                        [.. context, new FlowCondition("si ocurre un error en el bloque TRY", [], false, [], true)]);
-                    break;
+                    {
+                        int tryId = AddStep("try", tryCatch, parent, depth, "Intenta ejecutar (TRY)", null, [], context, [], null, false);
+                        WalkList(tryCatch.TryStatements.Statements, context, tryId, depth + 1);
+
+                        List<FlowCondition> failed =
+                            [.. context, new FlowCondition("si ocurre un error en el bloque TRY", [], false, [], true)];
+                        int catchId = AddStep("catch", tryCatch.CatchStatements, parent, depth, "Si ocurre un error (CATCH)", null, [], failed, [],
+                            tryCatch.CatchStatements, tryCatch.CatchStatements.Statements.Count > 0);
+                        WalkList(tryCatch.CatchStatements.Statements, failed, catchId, depth + 1);
+                        break;
+                    }
 
                 case ExecuteStatement exec:
-                    AddExec(exec, context);
+                    AddExec(exec, context, parent, depth);
                     break;
 
                 case InsertStatement insert:
-                    AddWrite(insert.InsertSpecification.Target, context);
+                    AddWrite("INSERT", insert.InsertSpecification.Target, null, insert, context, parent, depth);
                     break;
                 case UpdateStatement update:
-                    AddWrite(update.UpdateSpecification.Target, context);
+                    AddWrite("UPDATE", update.UpdateSpecification.Target, update.UpdateSpecification.FromClause, update, context, parent, depth);
                     break;
                 case DeleteStatement delete:
-                    AddWrite(delete.DeleteSpecification.Target, context);
+                    AddWrite("DELETE", delete.DeleteSpecification.Target, delete.DeleteSpecification.FromClause, delete, context, parent, depth);
                     break;
                 case MergeStatement merge:
-                    AddWrite(merge.MergeSpecification.Target, context);
+                    AddWrite("MERGE", merge.MergeSpecification.Target, null, merge, context, parent, depth);
                     break;
                 case TruncateTableStatement truncate:
-                    Add("write", Name(truncate.TableName), [], context);
+                    {
+                        string table = Name(truncate.TableName);
+                        Add("write", table, [], context);
+                        AddStep("write", truncate, parent, depth, $"Vacía la tabla {FullName(truncate.TableName)} (TRUNCATE)", "TRUNCATE",
+                            [FullName(truncate.TableName)], context, [], null, true);
+                        break;
+                    }
+
+                case SelectStatement select:
+                    AddSelect(select, context, parent, depth);
+                    break;
+
+                case ReturnStatement ret:
+                    AddStep("return", ret, parent, depth,
+                        ret.Expression is null ? "Termina el procedimiento (RETURN)" : $"Termina el procedimiento devolviendo {Compact(Text(_source, ret.Expression))}",
+                        null, [], context, [], null, true);
+                    break;
+
+                case ThrowStatement thr:
+                    AddStep("throw", thr, parent, depth,
+                        thr.Message is null ? "Relanza el error (THROW)" : $"Lanza un error: {Compact(Text(_source, thr.Message))}",
+                        null, [], context, [], null, true);
+                    break;
+
+                case RaiseErrorStatement raise:
+                    AddStep("throw", raise, parent, depth, $"Emite un mensaje de error (RAISERROR): {Compact(Text(_source, raise.FirstParameter))}",
+                        null, [], context, [], null, true);
+                    break;
+
+                case BeginTransactionStatement:
+                    AddStep("transaction", statement, parent, depth, "Inicia una transacción", "BEGIN", [], context, [], null, true);
+                    break;
+                case CommitTransactionStatement:
+                    AddStep("transaction", statement, parent, depth, "Confirma la transacción (COMMIT)", "COMMIT", [], context, [], null, true);
+                    break;
+                case RollbackTransactionStatement:
+                    AddStep("transaction", statement, parent, depth, "Deshace la transacción (ROLLBACK)", "ROLLBACK", [], context, [], null, true);
                     break;
             }
         }
 
-        private void AddExec(ExecuteStatement exec, List<FlowCondition> context)
+        private void AddExec(ExecuteStatement exec, List<FlowCondition> context, int parent, int depth)
         {
             if (exec.ExecuteSpecification.ExecutableEntity is not ExecutableProcedureReference reference)
             {
-                Add("dynamic", "EXEC (texto dinámico)", [], context);   // EXEC('...')
+                Add("dynamic", "EXEC (texto dinámico)", [], context);
+                AddStep("dynamic", exec, parent, depth, "Ejecuta SQL dinámico (texto): destino no deducible", null, [], context, [], null, true);
                 return;
             }
 
             SchemaObjectName? procedure = reference.ProcedureReference?.ProcedureReference?.Name;
             if (procedure is null)
             {
-                Add("dynamic", "EXEC @variable", [], context);          // EXEC @proc
+                Add("dynamic", "EXEC @variable", [], context);
+                AddStep("dynamic", exec, parent, depth, "Ejecuta un procedimiento elegido por variable: destino no deducible", null, [], context, [], null, true);
                 return;
             }
 
@@ -169,14 +228,84 @@ public static class ProcedureFlowAnalyzer
 
             bool dynamic = procedure.BaseIdentifier.Value.Equals("sp_executesql", StringComparison.OrdinalIgnoreCase);
             Add(dynamic ? "dynamic" : "exec", dynamic ? "sp_executesql (SQL dinámico)" : target, arguments, context);
+
+            if (dynamic)
+            {
+                AddStep("dynamic", exec, parent, depth, "Ejecuta SQL dinámico (sp_executesql): destino no deducible", null, [], context, arguments, null, true);
+            }
+            else
+            {
+                AddStep("exec", exec, parent, depth, $"Llama al procedimiento {FullName(procedure)}", null, [FullName(procedure)], context, arguments, null, true);
+            }
         }
 
-        private void AddWrite(TableReference? table, List<FlowCondition> context)
+        private void AddWrite(string operation, TableReference? table, FromClause? from, TSqlStatement statement,
+            List<FlowCondition> context, int parent, int depth)
         {
-            if (table is not NamedTableReference named) return;
-            string target = Name(named.SchemaObject);
-            if (target.Contains('#') || target.StartsWith("@")) return;   // temporales y variables de tabla
-            Add("write", target, [], context);
+            string full;
+            string? local = null;
+            if (table is NamedTableReference named)
+            {
+                SchemaObjectName resolved = ResolveAlias(named.SchemaObject, from);
+                full = FullName(resolved);
+                local = Name(resolved);
+            }
+            else if (table is VariableTableReference variable)
+            {
+                full = variable.Variable.Name;
+            }
+            else
+            {
+                return;
+            }
+
+            if (local is not null && !local.Contains('#') && !local.StartsWith("@"))
+            {
+                Add("write", local, [], context);
+            }
+
+            string verb = operation switch
+            {
+                "INSERT" => "Inserta registros en",
+                "UPDATE" => "Actualiza",
+                "DELETE" => "Elimina registros de",
+                _ => "Combina datos (MERGE) en"
+            };
+            string kindOfTable = full.StartsWith('#') ? " (tabla temporal)" : full.StartsWith('@') ? " (variable de tabla)" : string.Empty;
+            AddStep("write", statement, parent, depth, $"{verb} {full}{kindOfTable}", operation, [full], context, [], null, true);
+        }
+
+        private void AddSelect(SelectStatement select, List<FlowCondition> context, int parent, int depth)
+        {
+            HashSet<string> ctes = new(StringComparer.OrdinalIgnoreCase);
+            if (select.WithCtesAndXmlNamespaces is not null)
+            {
+                foreach (CommonTableExpression cte in select.WithCtesAndXmlNamespaces.CommonTableExpressions)
+                {
+                    ctes.Add(cte.ExpressionName.Value);
+                }
+            }
+
+            TableCollector collector = new();
+            select.Accept(collector);
+            List<string> tables = collector.Tables
+                .Where(t => t.SchemaObject.SchemaIdentifier is not null || !ctes.Contains(t.SchemaObject.BaseIdentifier.Value))
+                .Select(t => FullName(t.SchemaObject))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (select.Into is not null)
+            {
+                string into = FullName(select.Into);
+                string from = tables.Count == 0 ? string.Empty : $" con datos de {string.Join(", ", tables)}";
+                string local = Name(select.Into);
+                if (!local.Contains('#')) Add("write", local, [], context);
+                AddStep("write", select, parent, depth, $"Crea y llena {into} (SELECT INTO){from}", "SELECT INTO", [into], context, [], null, true);
+                return;
+            }
+
+            if (tables.Count == 0) return;
+            AddStep("read", select, parent, depth, $"Lee {string.Join(", ", tables)}", null, tables, context, [], null, true);
         }
 
         private void Add(string kind, string target, List<FlowArgument> arguments, List<FlowCondition> context)
@@ -186,7 +315,34 @@ public static class ProcedureFlowAnalyzer
             Branches.Add(new FlowBranch(kind, target, [.. context], arguments));
         }
 
-        // ---- Condiciones -------------------------------------------------------------------
+        private int AddStep(string kind, TSqlFragment node, int parent, int depth, string title, string? operation,
+            IReadOnlyList<string> targets, List<FlowCondition> context, IReadOnlyList<FlowArgument> arguments,
+            TSqlFragment? range, bool instrument)
+        {
+            int id = _nextId++;
+            Steps.Add(new FlowStep(id, parent, depth, kind, node.StartLine, title, operation, targets, [.. context], arguments));
+            return id;
+        }
+
+        private static SchemaObjectName ResolveAlias(SchemaObjectName name, FromClause? from)
+        {
+            if (from is null || name.SchemaIdentifier is not null) return name;
+            AliasCollector aliases = new();
+            from.Accept(aliases);
+            return aliases.ByAlias.TryGetValue(name.BaseIdentifier.Value, out SchemaObjectName? real) ? real : name;
+        }
+
+        private static string FullName(SchemaObjectName name)
+        {
+            string baseName = name.BaseIdentifier.Value;
+            if (baseName.StartsWith('#')) return baseName;
+            List<string> parts = new();
+            if (name.ServerIdentifier is not null) parts.Add(name.ServerIdentifier.Value);
+            if (name.DatabaseIdentifier is not null) parts.Add(name.DatabaseIdentifier.Value);
+            parts.Add(name.SchemaIdentifier?.Value ?? "dbo");
+            parts.Add(baseName);
+            return string.Join('.', parts);
+        }
 
         private FlowCondition Condition(BooleanExpression expression, bool negate)
         {
@@ -205,10 +361,6 @@ public static class ProcedureFlowAnalyzer
             return new FlowCondition(text, constraints, exact, usedParameters, collector.HasQuery || collector.HasFunction || localVariables);
         }
 
-        /// <summary>
-        /// Extrae restricciones evaluables. Devuelve true si la expresión completa quedó representada
-        /// (conjunción de comparaciones simples entre un parámetro y un literal, IS [NOT] NULL o IN con literales).
-        /// </summary>
         private bool Decompose(BooleanExpression expression, bool negate, List<ParamConstraint> output)
         {
             switch (expression)
@@ -222,7 +374,6 @@ public static class ProcedureFlowAnalyzer
                 case BooleanBinaryExpression binary:
                     {
                         bool and = binary.BinaryExpressionType == BooleanBinaryExpressionType.And;
-                        // A AND B  /  NOT (A OR B)  =>  se cumplen las dos partes. Lo demás no es una conjunción.
                         if (and == !negate)
                         {
                             bool left = Decompose(binary.FirstExpression, negate, output);
@@ -312,9 +463,6 @@ public static class ProcedureFlowAnalyzer
 
         private static string Quote(string value) => double.TryParse(value, System.Globalization.CultureInfo.InvariantCulture, out _) ? value : $"'{value}'";
 
-        // ---- Utilidades --------------------------------------------------------------------
-
-        /// <summary>"RETURN" o "THROW" si la sentencia termina siempre la ejecución (a nivel del propio bloque); null si no.</summary>
         private static string? Terminator(TSqlStatement statement) => statement switch
         {
             ReturnStatement => "RETURN",
@@ -325,6 +473,23 @@ public static class ProcedureFlowAnalyzer
 
         private static string Name(SchemaObjectName name) =>
             $"{name.SchemaIdentifier?.Value ?? "dbo"}.{name.BaseIdentifier.Value}";
+    }
+
+    private sealed class TableCollector : TSqlFragmentVisitor
+    {
+        public List<NamedTableReference> Tables { get; } = new();
+
+        public override void Visit(NamedTableReference node) => Tables.Add(node);
+    }
+
+    private sealed class AliasCollector : TSqlFragmentVisitor
+    {
+        public Dictionary<string, SchemaObjectName> ByAlias { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+        public override void Visit(NamedTableReference node)
+        {
+            if (node.Alias is not null) ByAlias[node.Alias.Value] = node.SchemaObject;
+        }
     }
 
     private sealed class VariableCollector : TSqlFragmentVisitor

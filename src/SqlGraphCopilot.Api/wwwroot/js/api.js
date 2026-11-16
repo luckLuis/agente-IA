@@ -61,5 +61,5 @@ export const api = {
   deepScan: (instance, database) =>
     request('/api/analysis/deep-scan', { method: 'POST', body: { instance, database } }),
 
-  chat: (payload) => request('/api/copilot/chat', { method: 'POST', body: payload })
+  chat: (payload, signal) => request('/api/copilot/chat', { method: 'POST', body: payload, signal })
 };

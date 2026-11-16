@@ -68,7 +68,7 @@
     <aside class="sidebar" aria-label="Búsqueda y filtros">
       <section class="card">
         <h2>Buscar objeto</h2>
-        <input id="search-input" type="search" placeholder="sp_Nombre, dbo.Tabla…" disabled aria-label="Buscar objeto">
+        <input id="search-input" type="search" placeholder="sp_Nombre, dbo.Tabla…  (atajo: /)" disabled aria-label="Buscar objeto">
         <div id="search-kinds" class="chip-row" role="group" aria-label="Filtrar búsqueda por tipo"></div>
         <ul id="search-results" class="result-list" aria-live="polite"></ul>
         <button type="button" id="search-more" class="btn ghost small block" hidden>Más resultados</button>
@@ -171,12 +171,12 @@
 
       <section id="tab-analysis" class="tab-body" role="tabpanel" hidden>
         <div class="analysis-actions">
-          <button type="button" class="btn tile" data-analysis="overview"><b>Resumen</b><span>Diagnóstico general</span></button>
-          <button type="button" class="btn tile" data-analysis="spof"><b>Puntos únicos de fallo</b><span>Objetos que arrastran a muchos</span></button>
-          <button type="button" class="btn tile" data-analysis="coupling"><b>Acoplamiento</b><span>Fan-in / fan-out</span></button>
-          <button type="button" class="btn tile" data-analysis="redundancy"><b>Redundancias</b><span>SPs duplicados o casi iguales</span></button>
-          <button type="button" class="btn tile" data-analysis="bottlenecks"><b>Cuellos de botella</b><span>Escrituras, cadenas, ciclos</span></button>
-          <button type="button" class="btn tile" data-analysis="broken-references"><b>Referencias rotas</b><span>Objetos que no existen</span></button>
+          <button type="button" class="btn tile" disabled data-analysis="overview"><b>Resumen</b><span>Diagnóstico general</span></button>
+          <button type="button" class="btn tile" disabled data-analysis="spof"><b>Puntos únicos de fallo</b><span>Objetos que arrastran a muchos</span></button>
+          <button type="button" class="btn tile" disabled data-analysis="coupling"><b>Acoplamiento</b><span>Fan-in / fan-out</span></button>
+          <button type="button" class="btn tile" disabled data-analysis="redundancy"><b>Redundancias</b><span>SPs duplicados o casi iguales</span></button>
+          <button type="button" class="btn tile" disabled data-analysis="bottlenecks"><b>Cuellos de botella</b><span>Escrituras, cadenas, ciclos</span></button>
+          <button type="button" class="btn tile" disabled data-analysis="broken-references"><b>Referencias rotas</b><span>Objetos que no existen</span></button>
         </div>
         <div id="analysis-content" class="analysis-content"></div>
       </section>

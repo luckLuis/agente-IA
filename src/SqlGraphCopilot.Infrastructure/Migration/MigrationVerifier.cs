@@ -20,6 +20,13 @@ public sealed class MigrationVerifier : IMigrationVerifier
     private static readonly Regex Forbidden = new(
         @"System\.Diagnostics\.Process|\bProcess\.Start|System\.Net\.|\bHttpClient\b|System\.IO\.File|\bFile\.|\bDirectory\.|\bRegistry\b|DllImport|Assembly\.Load|Environment\.Exit|Reflection\.Emit|\bunsafe\b",
         RegexOptions.Compiled);
+    private static readonly Regex TestMarker = new(@"\[(Fact|Theory)\b", RegexOptions.Compiled);
+    private static readonly Regex DatabaseAccess = new(
+        @"SqlConnection|SqlCommand|SqlDataAdapter|SqlDataReader|SqlClient|ConnectionString|DbConnection|DbCommand|Category""\s*,\s*""Parity",
+        RegexOptions.Compiled);
+    private static readonly Regex ConnectionData = new(
+        @"SQLGRAPH_TEST_CONN|GetEnvironmentVariable|\bServer\s*=|Data\s+Source\s*=|Initial\s+Catalog|Trusted_Connection|Integrated\s+Security|\bUser\s+Id\s*=",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly SemaphoreSlim Gate = new(1, 1);
 
     private readonly MigrationVerifierOptions _options;
@@ -51,18 +58,11 @@ public sealed class MigrationVerifier : IMigrationVerifier
             Dictionary<string, string> env = new()
             {
                 ["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1",
-                ["DOTNET_NOLOGO"] = "1"
+                ["DOTNET_NOLOGO"] = "1",
+                ["SQLGRAPH_TEST_CONN"] = string.Empty
             };
             List<string> notes = new();
-            if (!string.IsNullOrWhiteSpace(_options.ParityConnectionString))
-            {
-                env["SQLGRAPH_TEST_CONN"] = _options.ParityConnectionString;
-                notes.Add("Las pruebas de paridad se ejecutaron contra el SP real (dentro de transacciones con ROLLBACK).");
-            }
-            else
-            {
-                notes.Add("Las pruebas de paridad se omitieron: no hay cadena de conexión configurada (MigrationVerifier:ParityConnectionString).");
-            }
+            notes.Add("Las pruebas se ejecutaron sin conexión a ninguna base de datos: usan fakes del gateway.");
 
             (int exitCode, string output, bool timedOut) = await RunAsync(
                 root,
@@ -111,6 +111,21 @@ public sealed class MigrationVerifier : IMigrationVerifier
             if (!FileName.IsMatch(file.Name)) throw new ArgumentException($"Nombre de archivo no válido: {file.Name}");
             Match bad = Forbidden.Match(file.Content);
             if (bad.Success) throw new ArgumentException($"El código usa algo no permitido en la validación ({bad.Value.Trim()}) en {file.Name}.");
+
+            Match connection = ConnectionData.Match(file.Content);
+            if (connection.Success)
+            {
+                throw new ArgumentException($"No se valida código que obtenga o contenga datos de conexión a una base ({connection.Value.Trim()}) en {file.Name}.");
+            }
+
+            if (TestMarker.IsMatch(file.Content))
+            {
+                Match database = DatabaseAccess.Match(file.Content);
+                if (database.Success)
+                {
+                    throw new ArgumentException($"Las pruebas no pueden tocar la base de datos ({database.Value.Trim()}) en {file.Name}. Use un fake de IProcedureGateway.");
+                }
+            }
         }
     }
 

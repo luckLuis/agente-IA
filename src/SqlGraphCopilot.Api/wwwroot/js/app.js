@@ -67,6 +67,14 @@ const el = {
 };
 
 const STORAGE_KEY = 'sqlgraphcopilot.scope';
+const UI_KEY = 'sqlgraphcopilot.ui';
+const TAB_NAMES = ['detail', 'analysis', 'copilot', 'stats'];
+const NODE_SUGGESTIONS = [
+  'Explica qué hace este objeto',
+  '¿Qué pasa si lo modifico?',
+  '¿Quién lo usa y a quién usa?',
+  '¿Dónde puede bloquear?'
+];
 const SUGGESTIONS = [
   'Dame un diagnóstico general',
   '¿Cuáles son los puntos únicos de fallo?',
@@ -112,6 +120,8 @@ async function init() {
   buildKindControls();
   buildSuggestions();
   wireEvents();
+  restoreUi();
+  showAnalysisHint();
   initMishi();
 
   try {
@@ -158,6 +168,14 @@ function wireEvents() {
     searchTimer = setTimeout(() => runSearch(true), 280);
   });
   el.searchMore.addEventListener('click', () => runSearch(false));
+  el.searchInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && el.searchInput.value) {
+      event.preventDefault();
+      el.searchInput.value = '';
+      runSearch(true);
+    }
+  });
+  el.toast.addEventListener('click', (event) => { if (!event.target.closest('.toast-action')) el.toast.hidden = true; });
 
   el.hopRange.addEventListener('input', () => {
     const value = Number(el.hopRange.value);
@@ -165,13 +183,23 @@ function wireEvents() {
     el.hopValue.textContent = all ? 'todos' : value;
     graph.setFilters({ maxHops: all ? Infinity : value });
     updateCounts();
+    saveUi();
   });
-  el.directionSelect.addEventListener('change', () => { graph.setFilters({ direction: el.directionSelect.value }); updateCounts(); });
-  el.clusterSelect.addEventListener('change', () => { graph.setFilters({ clusterMode: el.clusterSelect.value }); updateCounts(); });
-  el.physicsToggle.addEventListener('change', () => graph.setFilters({ physics: el.physicsToggle.checked }));
+  el.directionSelect.addEventListener('change', () => { graph.setFilters({ direction: el.directionSelect.value }); updateCounts(); saveUi(); });
+  el.clusterSelect.addEventListener('change', () => { graph.setFilters({ clusterMode: el.clusterSelect.value }); updateCounts(); saveUi(); });
+  el.physicsToggle.addEventListener('change', () => { graph.setFilters({ physics: el.physicsToggle.checked }); saveUi(); });
 
-  document.querySelectorAll('.tabs button').forEach((button) =>
-    button.addEventListener('click', () => switchTab(button.dataset.tab)));
+  document.querySelectorAll('.tabs button').forEach((button) => {
+    button.addEventListener('click', () => switchTab(button.dataset.tab));
+    button.addEventListener('keydown', (event) => {
+      const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+      if (!step) return;
+      event.preventDefault();
+      const next = TAB_NAMES[(TAB_NAMES.indexOf(button.dataset.tab) + step + TAB_NAMES.length) % TAB_NAMES.length];
+      switchTab(next);
+      $(`tab-btn-${next}`).focus();
+    });
+  });
 
   document.querySelectorAll('[data-analysis]').forEach((button) =>
     button.addEventListener('click', () => runAnalysis(button.dataset.analysis, button)));
@@ -180,9 +208,17 @@ function wireEvents() {
   el.chatInput.addEventListener('keydown', (event) => {
     if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendChat(); }
   });
+  el.chatInput.addEventListener('input', updateChatCounter);
 
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && !el.dialog.open) graph.clearHighlight();
+    const typing = event.target.closest?.('input, textarea, select, [contenteditable]');
+    const wantsSearch = (event.key === '/' && !typing) || ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k');
+    if (wantsSearch && !el.searchInput.disabled) {
+      event.preventDefault();
+      el.searchInput.focus();
+      el.searchInput.select();
+    }
   });
 
   document.body.addEventListener('click', (event) => {
@@ -221,7 +257,7 @@ async function onInstanceChange(preselectDatabase) {
     }
   } catch (error) {
     fillSelect(el.databaseSelect, [], 'Error al leer bases');
-    toast(error.message, 'error');
+    toast(`No se pudieron leer las bases: ${error.message}`, 'error', { label: 'Reintentar', run: () => onInstanceChange(preselectDatabase) });
   }
 }
 
@@ -237,19 +273,21 @@ async function loadScope() {
   saveScope();
 
   setLoading('Leyendo catálogo de la base… (la primera vez puede tardar unos segundos)');
+  document.title = `${database} · SQL-Graph Copilot`;
   try {
     const summary = await api.summary(instance, database);
     renderStatus(summary);
     graph.clear();
     renderDetail(null);
-    el.analysisContent.innerHTML = '';
+    showAnalysisHint();
     await loadHubs();
     enableScopeControls(true);
     el.graphTitle.textContent = `${database} · ${instance}`;
     runSearch(true);
+    renderSuggestions();
     addChatMessage('system', `Base ${database} cargada. Pregunte por un objeto o un tema.`);
   } catch (error) {
-    toast(error.message, 'error');
+    toast(`No se pudo cargar la base: ${error.message}`, 'error', { label: 'Reintentar', run: loadScope });
   } finally {
     setLoading(null);
   }
@@ -266,7 +304,7 @@ async function loadHubs() {
     updateCounts();
     setTimeout(() => graph.fit(), 600);
   } catch (error) {
-    toast(error.message, 'error');
+    toast(`No se pudieron cargar los objetos principales: ${error.message}`, 'error', { label: 'Reintentar', run: loadHubs });
   } finally {
     setLoading(null);
   }
@@ -420,6 +458,7 @@ async function withBusy(button, task) {
 function selectNode(id, { fromGraph = false } = {}) {
   state.selectedId = id;
   renderDetail(graph.getNode(id));
+  renderSuggestions();
   // Un clic en la red lleva al detalle, salvo que el usuario esté conversando con el copiloto.
   if (fromGraph && $('tab-copilot').hidden) switchTab('detail');
 }
@@ -719,6 +758,7 @@ async function showInputs(node) {
     graph.stopScan();
     mountInputsPanel(el.inputsContent, report, {
       escapeHtml,
+      instance: node.server,
       database: node.database,
       onPickTarget: (target) => {
         const [id] = graph.findByName(target, node.database);
@@ -955,10 +995,18 @@ async function sendChat(preset, { display = null, autoVerify = null } = {}) {
   if (!preset) el.chatInput.value = '';
 
   addChatMessage('user', display ?? message);
-  const pending = addChatMessage('bot', '<span class="typing"><i></i><i></i><i></i></span>', true);
+  const pending = addChatMessage('bot', '<span class="typing"><i></i><i></i><i></i></span><span class="chat-wait"><span data-wait>Analizando…</span> <button type="button" class="btn ghost small" data-stop>Detener</button></span>', true);
   let followUp = null;
   state.busy = true;
   el.chatSend.disabled = true;
+  const controller = new AbortController();
+  const startedAt = Date.now();
+  const waitLabel = pending.querySelector('[data-wait]');
+  const waitTimer = setInterval(() => {
+    const seconds = Math.floor((Date.now() - startedAt) / 1000);
+    waitLabel.textContent = seconds < 5 ? 'Analizando…' : `Analizando… ${seconds} s (las respuestas largas pueden tardar hasta un par de minutos)`;
+  }, 1000);
+  pending.querySelector('[data-stop]').addEventListener('click', () => controller.abort());
 
   // La red muestra que se está analizando: ondas desde el objeto seleccionado (o desde los hubs).
   // Solo se marca el flujo del objeto; sin objeto seleccionado no hay nada que marcar.
@@ -970,7 +1018,7 @@ async function sendChat(preset, { display = null, autoVerify = null } = {}) {
       database: state.database,
       message,
       focusNodeId: state.selectedId
-    });
+    }, controller.signal);
     pending.innerHTML = renderMarkdown(response.reply);
 
     // Botón "Copiar código" debajo de cada bloque de código (SQL o C#).
@@ -1024,9 +1072,23 @@ async function sendChat(preset, { display = null, autoVerify = null } = {}) {
       graph.traceIds(present, { onStep: traceBanner('Copiloto') }).then(() => showBanner(null));
     }
   } catch (error) {
-    pending.classList.add('error');
-    pending.textContent = error.message;
+    if (error.name === 'AbortError') {
+      pending.classList.add('stopped');
+      pending.textContent = 'Consulta detenida. Puede reformular la pregunta o volver a enviarla.';
+    } else {
+      pending.classList.add('error');
+      pending.innerHTML = '';
+      const text = document.createElement('div');
+      text.textContent = error.message;
+      const retry = document.createElement('button');
+      retry.type = 'button';
+      retry.className = 'btn ghost small';
+      retry.textContent = 'Reintentar';
+      retry.addEventListener('click', () => { pending.previousElementSibling?.remove(); pending.remove(); sendChat(message, { display: display ?? message }); });
+      pending.append(text, retry);
+    }
   } finally {
+    clearInterval(waitTimer);
     graph.stopScan();
     state.busy = false;
     el.chatSend.disabled = false;
@@ -1047,7 +1109,7 @@ async function runVerification(message, files, { attempt, auto, button }) {
     message.appendChild(box);
   }
   button.disabled = true;
-  box.innerHTML = `<div class="verify run">Compilando y ejecutando las pruebas… ${attempt ? `(corrección ${attempt})` : ''}</div>`;
+  box.innerHTML = `<div class="verify run">Compilando y ejecutando las pruebas, sin conectarse a ninguna base de datos… ${attempt ? `(corrección ${attempt})` : ''}</div>`;
   el.chatLog.scrollTop = el.chatLog.scrollHeight;
 
   try {
@@ -1104,7 +1166,22 @@ function addChatMessage(kind, content, isHtml = false) {
 }
 
 function buildSuggestions() {
-  for (const text of SUGGESTIONS) {
+  renderSuggestions();
+}
+
+function renderSuggestions() {
+  const node = state.selectedId && graph?.has(state.selectedId) ? graph.getNode(state.selectedId) : null;
+  const items = node
+    ? [...NODE_SUGGESTIONS, ...(MIGRATABLE_KINDS.includes(node.kind) ? ['Migra este objeto a C#'] : [])]
+    : SUGGESTIONS;
+  el.chatSuggestions.innerHTML = '';
+  if (node) {
+    const label = document.createElement('span');
+    label.className = 'suggestions-label';
+    label.textContent = `Sobre ${node.name}:`;
+    el.chatSuggestions.appendChild(label);
+  }
+  for (const text of items) {
     const chip = document.createElement('button');
     chip.type = 'button';
     chip.className = 'chip';
@@ -1112,6 +1189,20 @@ function buildSuggestions() {
     chip.addEventListener('click', () => sendChat(text));
     el.chatSuggestions.appendChild(chip);
   }
+}
+
+function updateChatCounter() {
+  let counter = $('chat-counter');
+  if (!counter) {
+    counter = document.createElement('div');
+    counter.id = 'chat-counter';
+    counter.className = 'chat-counter';
+    el.chatForm.after(counter);
+  }
+  const length = el.chatInput.value.length;
+  const max = el.chatInput.maxLength;
+  counter.textContent = length > max * 0.8 ? `${length} / ${max}` : 'Enter envía · Shift+Enter salto de línea';
+  counter.classList.toggle('warn', length > max * 0.9);
 }
 
 // ---- Búsqueda -----------------------------------------------------------------------------
@@ -1149,7 +1240,7 @@ async function runSearch(reset) {
     }
     el.searchMore.hidden = state.search.page >= state.search.totalPages;
   } catch (error) {
-    toast(error.message, 'error');
+    toast(`La búsqueda falló: ${error.message}`, 'error', { label: 'Reintentar', run: () => runSearch(reset) });
   }
 }
 
@@ -1231,17 +1322,68 @@ function enableScopeControls(enabled) {
   for (const control of [el.searchInput, el.chatInput, el.chatSend, el.hubsBtn, el.fitBtn, el.clearBtn]) {
     control.disabled = !enabled;
   }
+  document.querySelectorAll('[data-analysis]').forEach((button) => { button.disabled = !enabled; });
 }
 
 function switchTab(tab) {
   document.querySelectorAll('.tabs button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
   for (const name of ['detail', 'analysis', 'copilot', 'stats']) $(`tab-${name}`).hidden = name !== tab;
   if (tab === 'stats') loadStatsPanel($('stats-content'), escapeHtml);
+  saveUi();
 }
 
+function saveUi() {
+  const tab = TAB_NAMES.find((name) => !$(`tab-${name}`).hidden) ?? 'detail';
+  try {
+    localStorage.setItem(UI_KEY, JSON.stringify({
+      tab,
+      direction: el.directionSelect.value,
+      cluster: el.clusterSelect.value,
+      physics: el.physicsToggle.checked,
+      hops: Number(el.hopRange.value)
+    }));
+  } catch { }
+}
+
+function restoreUi() {
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(UI_KEY) || 'null'); } catch { }
+  if (!saved) return;
+  if (saved.direction) el.directionSelect.value = saved.direction;
+  if (saved.cluster) el.clusterSelect.value = saved.cluster;
+  if (typeof saved.physics === 'boolean') el.physicsToggle.checked = saved.physics;
+  if (saved.hops) {
+    el.hopRange.value = saved.hops;
+    const all = saved.hops >= Number(el.hopRange.max);
+    el.hopValue.textContent = all ? 'todos' : saved.hops;
+  }
+  const all = Number(el.hopRange.value) >= Number(el.hopRange.max);
+  graph.setFilters({
+    direction: el.directionSelect.value,
+    clusterMode: el.clusterSelect.value,
+    physics: el.physicsToggle.checked,
+    maxHops: all ? Infinity : Number(el.hopRange.value)
+  });
+  if (['detail', 'analysis', 'copilot'].includes(saved.tab)) switchTab(saved.tab);
+}
+
+function showAnalysisHint() {
+  el.analysisContent.innerHTML = '<div class="muted-block">' + (state.instance
+    ? 'Elija un análisis para ver el resultado aquí.'
+    : 'Cargue una instancia y una base para ejecutar análisis.') + '</div>';
+}
+
+let loadingTimer;
 function setLoading(text) {
+  clearInterval(loadingTimer);
   el.loading.hidden = !text;
-  if (text) el.loadingText.textContent = text;
+  if (!text) return;
+  el.loadingText.textContent = text;
+  const startedAt = Date.now();
+  loadingTimer = setInterval(() => {
+    const seconds = Math.floor((Date.now() - startedAt) / 1000);
+    if (seconds >= 4) el.loadingText.textContent = `${text} · ${seconds} s`;
+  }, 1000);
 }
 
 function showEmpty(show) { el.emptyState.hidden = !show; }
@@ -1253,12 +1395,21 @@ function showBanner(message, kind = '') {
 }
 
 let toastTimer;
-function toast(message, kind = '') {
+function toast(message, kind = '', action = null) {
   el.toast.textContent = message;
+  el.toast.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+  if (action) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'toast-action';
+    button.textContent = action.label;
+    button.addEventListener('click', () => { el.toast.hidden = true; action.run(); });
+    el.toast.appendChild(button);
+  }
   el.toast.className = `toast ${kind}`;
   el.toast.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { el.toast.hidden = true; }, kind === 'error' ? 7000 : 4000);
+  toastTimer = setTimeout(() => { el.toast.hidden = true; }, action ? 15000 : kind === 'error' ? 7000 : 4000);
 }
 
 function fillSelect(select, options, placeholder) {

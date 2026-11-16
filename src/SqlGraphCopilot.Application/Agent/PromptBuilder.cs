@@ -117,17 +117,19 @@ public sealed class PromptBuilder
         4. **SPs auxiliares nuevos**: un bloque ```sql por cada operación de datos que el gateway necesite y que hoy
            no tenga SP propio. Si no hace falta, escribe "No se requieren".
         5. **Correspondencia**: tabla `método de IProcedureGateway` → `SP que invoca`.
-        6. **Pruebas xUnit**: UN bloque ```csharp separado (paquetes disponibles: xunit, FluentAssertions, Moq,
-           Microsoft.Data.SqlClient; no uses ningún otro). Debe incluir:
+        6. **Pruebas xUnit**: UN bloque ```csharp separado del código de la lógica y del gateway real (paquetes para
+           las pruebas: xunit, FluentAssertions, Moq; no importes Microsoft.Data.SqlClient ni uses otro). Debe incluir:
            - una prueba por cada rama de la lógica y una por cada validación que corta el flujo (RETURN/THROW);
            - una por cada IF EXISTS o dato leído que decide un camino (el fake responde con y sin datos);
            - cada prueba verifica qué métodos del gateway se invocan, con qué argumentos y en qué orden, y que en los
              caminos no elegidos no se invoca nada;
-           - una prueba de paridad con `[Trait("Category","Parity")]`: ejecuta el SP ORIGINAL dentro de una transacción
-             con ROLLBACK usando la cadena de la variable de entorno SQLGRAPH_TEST_CONN (si falta, la prueba se omite),
-             con los mismos escenarios, y compara código de retorno, OUTPUT y error con los de la lógica C#.
-        7. **Qué cambió**: tabla de dos columnas (Antes en el SP | Ahora en C# o en el SP).
-        8. **Puntos de atención** y **Despliegue y reversa** (orden de pasos y cómo volver atrás).
+           - NINGUNA prueba toca la base de datos: todas usan un fake o Moq de `IProcedureGateway`. Prohibido en las
+             pruebas `SqlConnection`, `SqlCommand`, cadenas de conexión, variables de entorno y pruebas de paridad
+             que ejecuten el SP original. La equivalencia se demuestra por escenarios, no ejecutando el SP.
+        7. **Equivalencia por escenarios**: tabla con una fila por cada camino del T-SQL original (condición de entrada
+           → resultado esperado: código de retorno, OUTPUT, error, llamadas al gateway en orden) y la prueba xUnit que lo cubre.
+        8. **Qué cambió**: tabla de dos columnas (Antes en el SP | Ahora en C# o en el SP).
+        9. **Puntos de atención** y **Despliegue y reversa** (orden de pasos y cómo volver atrás).
 
         Usa async/await y parámetros tipados. No inventes columnas ni tablas que no estén en el T-SQL original.
         """;

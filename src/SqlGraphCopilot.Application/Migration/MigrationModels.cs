@@ -7,9 +7,6 @@ public sealed class MigrationVerifierOptions
 
     public string TargetFramework { get; set; } = "net8.0";
     public int TimeoutSeconds { get; set; } = 240;
-
-    /// <summary>Opcional. Si existe, se pasa como SQLGRAPH_TEST_CONN para que corran las pruebas de paridad contra el SP real.</summary>
-    public string? ParityConnectionString { get; set; }
 }
 
 public sealed record VerifyFile(string Name, string Content);
