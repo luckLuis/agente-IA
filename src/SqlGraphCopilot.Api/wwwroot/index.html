@@ -134,6 +134,23 @@
         </div>
       </div>
 
+      <div id="focus-bar" class="focus-bar" hidden>
+        <span class="focus-label">Foco: <b id="focus-name"></b></span>
+        <span class="focus-group" role="group" aria-label="Saltos desde el foco">
+          <button type="button" data-hops="1">1 salto</button>
+          <button type="button" data-hops="2">2</button>
+          <button type="button" data-hops="3">3</button>
+          <button type="button" data-hops="all">Todos</button>
+        </span>
+        <span class="focus-group" role="group" aria-label="Dirección">
+          <button type="button" data-dir="Both">Ambos</button>
+          <button type="button" data-dir="Incoming">Quién lo usa</button>
+          <button type="button" data-dir="Outgoing">Qué usa</button>
+        </span>
+        <span id="focus-hidden" class="counts"></span>
+        <button type="button" id="focus-clear" class="btn ghost small" aria-label="Quitar foco" title="Quitar foco (Esc)">✕</button>
+      </div>
+
       <div id="network" class="network"></div>
 
       <div id="empty-state" class="empty-state">
@@ -156,6 +173,7 @@
     </section>
 
     <aside class="panel" aria-label="Detalle, análisis y copiloto">
+      <div class="panel-size"><button type="button" id="panel-size-btn" class="btn ghost small" aria-pressed="false" title="Ampliar o encoger este panel (atajo: Alt+P)">⤢ Ampliar panel</button></div>
       <nav class="tabs" role="tablist">
         <button type="button" role="tab" id="tab-btn-detail" data-tab="detail" aria-selected="true">Detalle</button>
         <button type="button" role="tab" id="tab-btn-analysis" data-tab="analysis" aria-selected="false">Análisis</button>

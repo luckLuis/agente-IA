@@ -122,3 +122,90 @@
   opacity: .45;
   cursor: not-allowed;
 }
+
+.focus-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .5rem .9rem;
+  padding: .4rem .8rem;
+  border-bottom: 1px solid var(--border, #334155);
+  background: rgba(56, 189, 248, .08);
+  font-size: .85rem;
+}
+
+  .focus-bar[hidden] {
+    display: none;
+  }
+
+.focus-group {
+  display: inline-flex;
+  gap: 2px;
+}
+
+  .focus-group button {
+    border: 1px solid var(--border, #334155);
+    background: transparent;
+    color: inherit;
+    padding: .15rem .55rem;
+    font: inherit;
+    cursor: pointer;
+  }
+
+    .focus-group button:first-child {
+      border-radius: 6px 0 0 6px;
+    }
+
+    .focus-group button:last-child {
+      border-radius: 0 6px 6px 0;
+    }
+
+    .focus-group button[aria-pressed="true"] {
+      background: #0ea5e9;
+      border-color: #0ea5e9;
+      color: #fff;
+    }
+
+.focus-bar #focus-clear {
+  margin-left: auto;
+}
+
+.mishi-bubble em {
+  opacity: .8;
+}
+
+.mishi-mute {
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font-size: .9rem;
+  padding: 0 .2rem;
+}
+
+.panel-size {
+  display: flex;
+  justify-content: flex-end;
+  padding: .35rem .6rem 0;
+}
+
+.workspace {
+  transition: grid-template-columns .2s ease;
+}
+
+@media (min-width: 1081px) {
+  .workspace[data-panel="wide"] {
+    grid-template-columns: 260px minmax(0, 1fr) min(760px, 52vw);
+  }
+}
+
+@media (max-width: 1080px) {
+  .panel-size {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workspace {
+    transition: none;
+  }
+}

@@ -66,6 +66,8 @@ export class GraphView {
     this.clusterIds = new Set();
     this.highlighted = null;
     this.focusId = null;
+    this.expanded = new Map();
+    this.verifying = new Set();
     this.filters = { kinds: new Set(Object.keys(KIND_STYLE)), maxHops: Infinity, direction: 'Both', clusterMode: 'auto', physics: true };
 
     this.nodes = new vis.DataSet();
@@ -89,11 +91,18 @@ export class GraphView {
     this.simNodeIds.clear();
     this.highlighted = null;
     this.focusId = null;
+    this.expanded.clear();
+    this.verifying.clear();
   }
 
   /** Agrega un subgrafo. Un nodo externo que llega como real se reemplaza (mismo Id). */
-  merge(subgraph, anchorId = null) {
+  merge(subgraph, anchorId = null, direction = 'Both') {
     this.#openAllClusters();
+    if (anchorId) {
+      const covered = this.expanded.get(anchorId) ?? new Set();
+      covered.add(direction);
+      this.expanded.set(anchorId, covered);
+    }
     const anchor = anchorId && this.meta.has(anchorId) ? this.network.getPositions([anchorId])[anchorId] : null;
     const touched = new Set();
     const newIds = new Set();
@@ -136,12 +145,16 @@ export class GraphView {
       loadedDegree.set(edge.to, (loadedDegree.get(edge.to) || 0) + 1);
     }
 
+    if (anchorId) touched.add(anchorId);
     const nodeUpdates = [];
     for (const id of touched) {
       const dto = this.meta.get(id);
       if (!dto) continue;
+      const covered = this.expanded.get(id);
+      const both = covered?.has('Both');
+      const missing = (dto.fanIn > 0 && !(both || covered?.has('Incoming'))) || (dto.fanOut > 0 && !(both || covered?.has('Outgoing')));
       dto.hasMore = dto.kind !== 'LinkedServer' &&
-        (dto.isExternal || (dto.fanIn + dto.fanOut) > (loadedDegree.get(id) || 0));
+        (covered && !dto.isExternal ? missing : (dto.isExternal || (dto.fanIn + dto.fanOut) > (loadedDegree.get(id) || 0)));
       const visual = nodeVisual(dto);
       if (this.simNodeIds.has(id)) markSimilar(visual);
       if (newIds.has(id) && anchor) {
@@ -166,6 +179,12 @@ export class GraphView {
 
   setFocus(id) {
     this.focusId = id;
+    this.applyView();
+  }
+
+  clearFocus() {
+    if (!this.focusId) return;
+    this.focusId = null;
     this.applyView();
   }
 
@@ -438,7 +457,28 @@ export class GraphView {
     };
   }
 
+  async #verifyMore(id) {
+    const dto = this.meta.get(id);
+    if (!dto?.hasMore || dto.isExternal || dto.kind === 'LinkedServer' || this.expanded.has(id) || this.verifying.has(id) || !this.handlers.onVerifyMore) return;
+    this.verifying.add(id);
+    try {
+      const subgraph = await this.handlers.onVerifyMore(id);
+      const newNodes = subgraph.nodes.some((n) => !this.meta.has(n.id));
+      const newEdges = subgraph.edges.some((e) => !this.edgeMeta.has(`${e.from}→${e.to}`));
+      if (!newNodes && !newEdges && this.meta.get(id) === dto) {
+        this.expanded.set(id, new Set(['Both']));
+        dto.hasMore = false;
+        const visual = nodeVisual(dto);
+        if (this.simNodeIds.has(id)) markSimilar(visual);
+        this.nodes.update(visual);
+      }
+    } catch { /* sin respuesta: se conserva el aviso */ } finally {
+      this.verifying.delete(id);
+    }
+  }
+
   #wireEvents() {
+    this.network.on('hoverNode', (params) => { if (!this.network.isCluster(params.node)) this.#verifyMore(params.node); });
     this.network.on('selectNode', (params) => {
       const id = params.nodes[0];
       if (this.network.isCluster(id)) return;

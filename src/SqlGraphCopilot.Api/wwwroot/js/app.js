@@ -103,6 +103,7 @@ async function init() {
     onSelect: (id) => selectNode(id, { fromGraph: true }),
     onDeselect: () => { state.selectedId = null; },
     onExpand: (id) => expandNode(id),
+    onVerifyMore: (id) => api.neighborhood(id, 1, 'Both'),
     onCountsChanged: updateCounts
   });
 
@@ -120,6 +121,8 @@ async function init() {
   buildKindControls();
   buildSuggestions();
   wireEvents();
+  wireFocusBar();
+  wirePanelSize();
   restoreUi();
   showAnalysisHint();
   initMishi();
@@ -160,7 +163,7 @@ function wireEvents() {
   el.refreshBtn.addEventListener('click', refreshScope);
   el.hubsBtn.addEventListener('click', loadHubs);
   el.fitBtn.addEventListener('click', () => graph.fit());
-  el.clearBtn.addEventListener('click', () => { graph.clear(); updateCounts(); showEmpty(true); renderDetail(null); });
+  el.clearBtn.addEventListener('click', () => { clearFocus(false); graph.clear(); updateCounts(); showEmpty(true); renderDetail(null); });
 
   let searchTimer;
   el.searchInput.addEventListener('input', () => {
@@ -277,6 +280,7 @@ async function loadScope() {
   try {
     const summary = await api.summary(instance, database);
     renderStatus(summary);
+    clearFocus(false);
     graph.clear();
     renderDetail(null);
     showAnalysisHint();
@@ -286,6 +290,7 @@ async function loadScope() {
     runSearch(true);
     renderSuggestions();
     addChatMessage('system', `Base ${database} cargada. Pregunte por un objeto o un tema.`);
+    mishi?.announce('loaded', { db: database, objects: Object.values(summary.objectCounts).reduce((a, b) => a + b, 0) });
   } catch (error) {
     toast(`No se pudo cargar la base: ${error.message}`, 'error', { label: 'Reintentar', run: loadScope });
   } finally {
@@ -364,8 +369,8 @@ async function expandNode(nodeId, { selectAfter = false, depth = 1 } = {}) {
 
   setLoading(crossesBoundary ? 'Cargando solo la rama externa…' : 'Cargando vecinos…');
   try {
-    const subgraph = await api.neighborhood(nodeId, depth, el.directionSelect.value);
-    const { added } = graph.merge(subgraph, nodeId);
+    const subgraph = await api.neighborhood(nodeId, depth, 'Both');
+    const { added } = graph.merge(subgraph, nodeId, 'Both');
     showEmpty(false);
     showBanner(subgraph.message);
     updateCounts();
@@ -521,7 +526,7 @@ function renderDetail(node) {
   const explore = actionGroup('Explorar en la red', [
     actionButton('expand1', 'Expandir 1 nivel'),
     actionButton('expand2', 'Expandir 2 niveles'),
-    actionButton('focus', 'Usar como foco'),
+    actionButton('focus', 'Centrar aquí', 'ghost', 'title="Muestra solo lo que está cerca de este objeto (2 saltos). Ajusta saltos y dirección en la barra sobre la red."'),
     isModule ? actionButton('flow', 'Trazar flujo') : ''
   ]);
 
@@ -628,9 +633,7 @@ function onDetailAction(action, node, button) {
     case 'mishi': return withBusy(button, () => smellNode(node));
     case 'definition': return withBusy(button, () => showDefinition(node));
     case 'focus':
-      graph.setFocus(node.id);
-      toast(`Foco: ${node.schema}.${node.name}. Use "Saltos desde el foco" para filtrar.`);
-      updateCounts();
+      setFocus(node);
       break;
     case 'ask':
       switchTab('copilot');
@@ -722,29 +725,29 @@ async function initMishi() {
   });
   try {
     mishi.setProgress(await fetchProgress());
-    mishi.say('¡Miau! 🐱 Soy Mishi. Elige un SP y pídeme que lo huela.', 7000);
+    mishi.announce('hello', {}, { ms: 7000, force: true });
   } catch { /* sin backend de Mishi: la mascota queda en reposo */ }
 }
 
 /** Mishi analiza el código de un objeto de la red (sin gastar tokens: usa el árbol sintáctico). */
 async function smellNode(node) {
   if (!mishi) return;
-  mishi.react('studying', `Mrrr… 📚 Olfateando ${node.schema}.${node.name}…`);
+  mishi.announce('sniffStart', { name: node.name }, { force: true });
   try {
-    mishi.apply(await analyzeObject({ instance: node.server, database: node.database, schema: node.schema, name: node.name }));
+    mishi.apply(await analyzeObject({ instance: node.server, database: node.database, schema: node.schema, name: node.name }), { label: node.name });
     mishi.openDrawer();
   } catch (error) {
-    mishi.react('alert', `¡Miau! 🙀 ${error.message}`);
+    mishi.announce('error', { message: error.message }, { force: true });
   }
 }
 
 /** Mishi analiza SQL pegado por el usuario. */
 async function smellSql(sql) {
-  mishi.react('studying', 'Mrrr… 📚 Olfateando tu consulta…');
+  mishi.announce('sniffSql', {}, { force: true });
   try {
-    mishi.apply(await analyzeSql(sql));
+    mishi.apply(await analyzeSql(sql), { label: 'tu consulta' });
   } catch (error) {
-    mishi.react('alert', `¡Miau! 🙀 ${error.message}`);
+    mishi.announce('error', { message: error.message }, { force: true });
   }
 }
 
@@ -775,6 +778,7 @@ async function showInputs(node) {
           else if (id !== node.id && !ids.includes(id)) ids.push(id);
         }
         if (missing) toast(`${missing} destino(s) no están cargados en la red. Expanda el nodo para verlos.`);
+        if (hasValues) mishi?.announce('flowSimulated', { count: ids.length });
         if (ids.length === 0) { toast(hasValues ? 'Con esa entrada no se llega a ningún objeto cargado en la red.' : 'No hay destinos cargados en la red.'); return; }
         graph.playTrace([[node.id], ids], { direction: 'out', onStep: traceBanner('Entrada') }).then(() => showBanner(null));
       }
@@ -1004,6 +1008,7 @@ async function sendChat(preset, { display = null, autoVerify = null } = {}) {
   const waitLabel = pending.querySelector('[data-wait]');
   const waitTimer = setInterval(() => {
     const seconds = Math.floor((Date.now() - startedAt) / 1000);
+    if (seconds === 20) mishi?.announce('chatWaiting', { seconds });
     waitLabel.textContent = seconds < 5 ? 'Analizando…' : `Analizando… ${seconds} s (las respuestas largas pueden tardar hasta un par de minutos)`;
   }, 1000);
   pending.querySelector('[data-stop]').addEventListener('click', () => controller.abort());
@@ -1020,6 +1025,7 @@ async function sendChat(preset, { display = null, autoVerify = null } = {}) {
       focusNodeId: state.selectedId
     }, controller.signal);
     pending.innerHTML = renderMarkdown(response.reply);
+    if (Date.now() - startedAt > 15000) mishi?.announce('chatDone');
 
     // Botón "Copiar código" debajo de cada bloque de código (SQL o C#).
     pending.querySelectorAll('pre').forEach((pre) => {
@@ -1115,8 +1121,8 @@ async function runVerification(message, files, { attempt, auto, button }) {
   try {
     const report = await verifyMigration(files, attempt);
     box.innerHTML = renderVerifyReport(report, escapeHtml);
-    if (isGreen(report)) mishi?.react('happy', `¡Purrr! 😸 ${report.passed} prueba(s) en verde. ¡Migración a salvo!`);
-    else mishi?.react('alert', report.compiled ? `¡Miau! 🙀 Fallaron ${report.failed} prueba(s). Voy a revisar con el copiloto.` : '¡Miau! 🙀 El código no compila. Hay que afilar las garras.');
+    if (isGreen(report)) mishi?.announce('verifyGreen', { passed: report.passed }, { force: true });
+    else mishi?.announce(report.compiled ? 'verifyRed' : 'verifyNoCompile', { failed: report.failed }, { force: true });
     button.disabled = false;
     button.textContent = 'Validar de nuevo';
 
@@ -1310,8 +1316,65 @@ function renderStatus(summary) {
   el.indexStatus.hidden = false;
 }
 
+const focusEl = {
+  bar: $('focus-bar'), name: $('focus-name'), hidden: $('focus-hidden'), clear: $('focus-clear')
+};
+
+function setHops(value) {
+  const all = value === 'all';
+  const max = Number(el.hopRange.max);
+  el.hopRange.value = all ? max : Math.min(Number(value), max - 1);
+  el.hopValue.textContent = all ? 'todos' : el.hopRange.value;
+  graph.setFilters({ maxHops: all ? Infinity : Number(el.hopRange.value) });
+  updateCounts();
+  saveUi();
+}
+
+function setFocus(node) {
+  const all = Number(el.hopRange.value) >= Number(el.hopRange.max);
+  focusEl.name.textContent = `${node.schema}.${node.name}`;
+  focusEl.bar.hidden = false;
+  graph.setFocus(node.id);
+  if (all) setHops(2);
+  else updateCounts();
+  graph.select(node.id, { focus: true });
+  mishi?.announce('focusSet', { name: node.name, hops: Number(el.hopRange.value) >= Number(el.hopRange.max) ? 99 : Number(el.hopRange.value) });
+}
+
+function clearFocus(announce = true) {
+  if (focusEl.bar.hidden) return;
+  graph.clearFocus();
+  focusEl.bar.hidden = true;
+  updateCounts();
+  if (announce) mishi?.announce('focusCleared');
+}
+
+function paintFocusBar() {
+  if (focusEl.bar.hidden) return;
+  const all = Number(el.hopRange.value) >= Number(el.hopRange.max);
+  focusEl.bar.querySelectorAll('[data-hops]').forEach((b) => b.setAttribute('aria-pressed', String(all ? b.dataset.hops === 'all' : b.dataset.hops === el.hopRange.value)));
+  focusEl.bar.querySelectorAll('[data-dir]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.dir === el.directionSelect.value)));
+  const hidden = graph.counts().hidden;
+  focusEl.hidden.textContent = hidden ? `${hidden} ocultos` : '';
+}
+
+function wireFocusBar() {
+  focusEl.bar.querySelectorAll('[data-hops]').forEach((b) => b.addEventListener('click', () => setHops(b.dataset.hops)));
+  focusEl.bar.querySelectorAll('[data-dir]').forEach((b) => b.addEventListener('click', () => {
+    el.directionSelect.value = b.dataset.dir;
+    graph.setFilters({ direction: b.dataset.dir });
+    updateCounts();
+    saveUi();
+  }));
+  focusEl.clear.addEventListener('click', () => clearFocus());
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !focusEl.bar.hidden && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName ?? '')) clearFocus();
+  });
+}
+
 function updateCounts() {
   if (!graph) return;
+  paintFocusBar();
   const c = graph.counts();
   el.graphCounts.textContent = c.nodes
     ? `${c.nodes} nodos · ${c.edges} relaciones${c.similar ? ` · ${c.similar} similares` : ''}${c.hidden ? ` · ${c.hidden} ocultos por filtros` : ''}${c.clusters ? ` · ${c.clusters} grupos` : ''}`
@@ -1332,6 +1395,26 @@ function switchTab(tab) {
   saveUi();
 }
 
+const PANEL_WIDE_QUERY = '(min-width: 1081px)';
+
+function setPanelWide(wide, { save = true } = {}) {
+  const workspace = document.querySelector('.workspace');
+  const button = $('panel-size-btn');
+  workspace.dataset.panel = wide ? 'wide' : 'normal';
+  button.setAttribute('aria-pressed', String(wide));
+  button.textContent = wide ? '⤡ Encoger panel' : '⤢ Ampliar panel';
+  if (save) saveUi();
+  setTimeout(() => window.dispatchEvent(new Event('resize')), 220);
+}
+
+function wirePanelSize() {
+  const button = $('panel-size-btn');
+  button.addEventListener('click', () => setPanelWide(button.getAttribute('aria-pressed') !== 'true'));
+  document.addEventListener('keydown', (event) => {
+    if (event.altKey && event.key.toLowerCase() === 'p') { event.preventDefault(); button.click(); }
+  });
+}
+
 function saveUi() {
   const tab = TAB_NAMES.find((name) => !$(`tab-${name}`).hidden) ?? 'detail';
   try {
@@ -1340,7 +1423,8 @@ function saveUi() {
       direction: el.directionSelect.value,
       cluster: el.clusterSelect.value,
       physics: el.physicsToggle.checked,
-      hops: Number(el.hopRange.value)
+      hops: Number(el.hopRange.value),
+      panelWide: $('panel-size-btn').getAttribute('aria-pressed') === 'true'
     }));
   } catch { }
 }
@@ -1349,6 +1433,7 @@ function restoreUi() {
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(UI_KEY) || 'null'); } catch { }
   if (!saved) return;
+  if (saved.panelWide) setPanelWide(true, { save: false });
   if (saved.direction) el.directionSelect.value = saved.direction;
   if (saved.cluster) el.clusterSelect.value = saved.cluster;
   if (typeof saved.physics === 'boolean') el.physicsToggle.checked = saved.physics;

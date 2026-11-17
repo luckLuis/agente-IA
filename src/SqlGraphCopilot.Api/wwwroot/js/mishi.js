@@ -2,10 +2,14 @@
 // Puede ser un gato o un husky siberiano; se elige desde el HUD y se recuerda en el navegador.
 // Todo es local y determinista: no consume tokens del LLM.
 
+import { createVoice } from './mishi-voice.js';
+
 const API_BASE = '/api';   // ajustar si la API cuelga de otra ruta
 const REDUCED = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 const BUBBLE_MS = 9000;
 const PET_KEY = 'sqlgraphcopilot.mishi.pet';
+const MUTE_KEY = 'sqlgraphcopilot.mishi.mute';
+const IDLE_MS = 90000;
 
 const CAT_SVG = `
 <svg viewBox="0 -16 120 128" aria-hidden="true" class="mishi-svg">
@@ -118,6 +122,9 @@ export class Mishi {
     this.timer = null;
     this.level = 1;
     this.pet = PETS[pet] ? pet : readSavedPet();
+    this.stats = { sniffed: 0, high: 0 };
+    this.voiceBox = createVoice(this.pet, this.stats);
+    try { this.muted = localStorage.getItem(MUTE_KEY) === '1'; } catch { this.muted = false; }
 
     this.root = document.createElement('div');
     this.root.className = 'mishi';
@@ -138,6 +145,7 @@ export class Mishi {
             <button type="button" data-pet="cat" title="Gato" aria-label="Gato">🐱</button>
             <button type="button" data-pet="husky" title="Husky siberiano" aria-label="Husky siberiano">🐶</button>
           </span>
+          <button type="button" class="mishi-mute" aria-label="Silenciar comentarios" title="Silenciar comentarios"></button>
         </div>
       </div>`;
     host.appendChild(this.root);
@@ -154,6 +162,11 @@ export class Mishi {
     this.root.querySelectorAll('.mishi-pets button').forEach((button) =>
       button.addEventListener('click', () => this.setPet(button.dataset.pet, { announce: true })));
     this.bubble.addEventListener('click', () => this.hideBubble());
+    this.muteButton = this.root.querySelector('.mishi-mute');
+    this.muteButton.addEventListener('click', () => this.setMuted(!this.muted));
+    this.paintMute();
+    this.resetIdle();
+    for (const type of ['pointerdown', 'keydown']) document.addEventListener(type, () => this.resetIdle(), { passive: true });
 
     this.setPet(this.pet, { save: false });
   }
@@ -168,6 +181,7 @@ export class Mishi {
     if (!info) return;
     const changed = pet !== this.pet;
     this.pet = pet;
+    this.voiceBox = createVoice(pet, this.stats);
     this.root.dataset.pet = pet;
     document.documentElement.dataset.pet = pet;
 
@@ -188,7 +202,38 @@ export class Mishi {
       try { localStorage.setItem(PET_KEY, pet); } catch { /* almacenamiento no disponible */ }
     }
     document.dispatchEvent(new CustomEvent('mishi:pet', { detail: { pet, name: info.name, emoji: info.emoji } }));
-    if (announce && changed) this.say(info.hello);
+    if (announce && changed) this.announce('petSwitch');
+  }
+
+  paintMute() {
+    this.muteButton.textContent = this.muted ? '🔕' : '🔔';
+    this.muteButton.setAttribute('aria-pressed', String(this.muted));
+    this.muteButton.title = this.muted ? 'Activar comentarios' : 'Silenciar comentarios';
+    this.muteButton.setAttribute('aria-label', this.muteButton.title);
+  }
+
+  setMuted(value) {
+    this.muted = value;
+    try { localStorage.setItem(MUTE_KEY, value ? '1' : '0'); } catch { /* almacenamiento no disponible */ }
+    this.paintMute();
+    if (value) this.hideBubble();
+  }
+
+  resetIdle() {
+    clearTimeout(this.idleTimer);
+    this.idleTimer = setTimeout(() => {
+      if (!this.muted && this.drawer.hidden) this.announce('idle', {}, { ms: 7000 });
+      this.resetIdle();
+    }, IDLE_MS);
+  }
+
+  announce(event, ctx = {}, { ms = BUBBLE_MS, force = false } = {}) {
+    const line = this.voiceBox.line(event, ctx);
+    if (!line) return false;
+    if (line.state) this.setState(line.state);
+    if (this.muted && !force && this.voiceBox.isAmbient(event)) return false;
+    this.say(line.text, ms);
+    return true;
   }
 
   get name() { return PETS[this.pet].name; }
@@ -203,7 +248,14 @@ export class Mishi {
   setState(state) { this.root.dataset.state = state; }
 
   say(text, ms = BUBBLE_MS) {
-    this.bubble.textContent = this.voice(text);
+    this.bubble.replaceChildren();
+    String(this.voice(text)).split(/(\*[^*]+\*)/).forEach((part) => {
+      if (/^\*[^*]+\*$/.test(part)) {
+        const em = document.createElement('em');
+        em.textContent = part.slice(1, -1);
+        this.bubble.appendChild(em);
+      } else if (part) this.bubble.appendChild(document.createTextNode(part));
+    });
     this.bubble.hidden = false;
     clearTimeout(this.timer);
     if (ms) this.timer = setTimeout(() => this.hideBubble(), ms);
@@ -226,14 +278,15 @@ export class Mishi {
   }
 
   /** Aplica la respuesta del backend (contrato: cat_state, bubble_text, gained_xp, learned_pattern, technical_response). */
-  apply(reply, { showDetail = true } = {}) {
+  apply(reply, { showDetail = true, label = 'este objeto' } = {}) {
     const previousLevel = this.level;
-    this.setState(reply.cat_state);
-    this.say(reply.bubble_text);
+    const spoken = this.voiceBox.reply(reply, label);
+    this.setState(spoken?.state ?? reply.cat_state);
+    this.say(spoken?.text ?? reply.bubble_text);
     this.setProgress({ xp: reply.total_xp, level: reply.level, levelStartXp: reply.xp_level_start, nextLevelXp: reply.xp_next_level });
     if (reply.gained_xp > 0) this.floatXp(reply.gained_xp);
     if (reply.level > previousLevel && previousLevel > 0 && reply.total_xp > reply.gained_xp) {
-      setTimeout(() => this.say(PETS[this.pet].levelUp(reply.level), 6000), 2500);
+      setTimeout(() => this.announce('levelUp', { level: reply.level }, { ms: 6000, force: true }), 2500);
     }
     if (showDetail) {
       const learned = reply.learned_pattern ? `<div class="mishi-learned">🧠 ${this.esc(this.voice(reply.learned_pattern))}</div>` : '';

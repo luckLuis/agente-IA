@@ -211,6 +211,25 @@ export function buildAllScenarios(report, { database = null, rollback = true } =
   return out.join('\n');
 }
 
+const KIND_ICON = {
+  decision: '?', then: '✓', else: '✗', loop: '↻', try: '⛨', catch: '!',
+  exec: '➜', write: '✎', read: '⌕', transaction: '⇄', return: '■', throw: '!', dynamic: '⚡'
+};
+const KIND_HELP = {
+  decision: 'Evalúa una condición y decide qué camino seguir.',
+  then: 'Camino que se toma cuando la condición se cumple.',
+  else: 'Camino que se toma cuando la condición no se cumple.',
+  loop: 'Repite los pasos de adentro mientras se cumpla la condición.',
+  try: 'Bloque protegido: si algo falla, salta al bloque de error.',
+  catch: 'Se ejecuta solo si algo falló dentro del bloque protegido.',
+  exec: 'Llama a otro procedimiento almacenado.',
+  write: 'Cambia datos de una tabla.',
+  read: 'Consulta datos de una tabla.',
+  transaction: 'Inicia, confirma o deshace una transacción.',
+  return: 'Termina el procedimiento en este punto.',
+  throw: 'Lanza un error y detiene la ejecución.',
+  dynamic: 'Arma y ejecuta SQL como texto: no se puede saber qué hace sin ejecutarlo.'
+};
 const KIND_BADGE = {
   decision: 'Decisión', then: 'Sí', else: 'No', loop: 'Ciclo', try: 'Intenta', catch: 'Error',
   exec: 'Llama', write: 'Escribe', read: 'Lee', transaction: 'Transacción', return: 'Fin', throw: 'Error', dynamic: 'Dinámico'
@@ -273,66 +292,116 @@ export function mountInputsPanel(container, report, { escapeHtml, onSimulate, on
   const esc = escapeHtml;
   const steps = report.steps ?? [];
   const scenarios = buildScenarios(report);
-  const summary = describeProcedure(report).map((line) => `<li>${esc(line)}</li>`).join('');
 
-  const paramRows = report.parameters.map((p) => `
-    <tr>
-      <td><code>${esc(p.name)}</code></td>
-      <td>${esc(p.dataType)}</td>
-      <td>${p.isOutput ? '<span class="badge info">Salida</span>' : p.isOptional ? `<span class="badge">Opcional${p.defaultValue ? ` · ${esc(p.defaultValue)}` : ''}</span>` : '<span class="badge crit">Obligatorio</span>'}</td>
-      <td>${p.isOutput ? '' : `<input class="flow-input" type="text" data-param="${esc(p.name.toLowerCase())}" placeholder="valor" aria-label="${esc(p.name)}" autocomplete="off">`}</td>
-    </tr>`).join('');
+  const info = summarize(report);
+  const chipList = (items, kind) => items.length
+    ? items.map((t) => `<button type="button" class="flow-chip ${kind}" data-target="${esc(t)}" title="Ver en la red">${esc(t)}</button>`).join('')
+    : '<span class="flow-none">Ninguno</span>';
 
-  const scenarioOptions = scenarios.map((s, i) => `<option value="${i}">${esc(s.title)}</option>`).join('');
+  const stats = [
+    ['Parámetros', report.parameters.length, ''],
+    ['Validaciones', info.cuts, info.cuts ? 'warn' : ''],
+    ['Lee', info.reads.length, 'read'],
+    ['Modifica', info.writes.length, 'write'],
+    ['Llama a', info.calls.length, 'exec']
+  ].map(([label, n, tone]) => `<div class="flow-stat ${tone}"><b>${n}</b><span>${label}</span></div>`).join('');
+
+  const notes = [];
+  if (info.transactions) notes.push('Maneja transacciones propias.');
+  if (info.dynamic) notes.push('Usa SQL dinámico: parte de lo que hace no se puede deducir leyendo el código.');
+  report.guards.forEach((g) => notes.push(`Termina antes (${g.outcome}) cuando: ${g.condition.text}`));
+
+  const paramCards = report.parameters.map((p) => {
+    const role = p.isOutput ? '<span class="badge info">Salida</span>'
+      : p.isOptional ? '<span class="badge">Opcional</span>' : '<span class="badge crit">Obligatorio</span>';
+    const hint = p.isOutput ? 'Parámetro de salida: lo devuelve el procedimiento, no se escribe.'
+      : p.defaultValue ? `Si lo dejas vacío se usa <code>${esc(p.defaultValue)}</code>.`
+        : p.isOptional ? 'Si lo dejas vacío no se envía.' : 'Necesario para que el procedimiento funcione.';
+    return `
+    <div class="flow-param">
+      <div class="flow-param-head"><code class="flow-param-name">${esc(p.name)}</code><span class="flow-param-type">${esc(p.dataType)}</span>${role}</div>
+      ${p.isOutput ? '' : `<input class="flow-input" type="text" data-param="${esc(p.name.toLowerCase())}" placeholder="${esc(p.dataType)}" aria-label="${esc(p.name)}" autocomplete="off" spellcheck="false">`}
+      <div class="flow-param-hint">${hint}</div>
+    </div>`;
+  }).join('');
+
+  const scenarioChips = scenarios.map((sc, i) => `<button type="button" class="flow-scenario" data-scenario-pick="${i}" title="${esc(sc.title)}">${esc(sc.title)}</button>`).join('');
 
   const stepRows = steps.map((step) => {
     const targets = MARKABLE_KINDS.has(step.kind)
-      ? step.targets.map((t) => `<button type="button" class="link" data-target="${esc(t)}">${esc(t)}</button>`).join(' ') : '';
+      ? step.targets.map((t) => `<button type="button" class="flow-chip ${esc(step.kind)}" data-target="${esc(t)}" title="Ver en la red">${esc(t)}</button>`).join('') : '';
     const args = step.arguments.length
-      ? `<div class="flow-args">con ${step.arguments.map((a) => `<code>${esc(a.name)} = ${esc(a.value)}</code>`).join(' ')}</div>` : '';
-    const badge = step.operation === 'validación' ? '<span class="badge info">validación</span>' : '';
+      ? `<div class="flow-args"><span>Con:</span>${step.arguments.map((a) => `<code>${esc(a.name)} = ${esc(a.value)}</code>`).join('')}</div>` : '';
+    const conds = step.conditions.length
+      ? `<div class="flow-conds"><span>Solo si:</span>${step.conditions.map((c) => `<code class="chip-cond ${c.dependsOnData ? 'data' : ''}" title="${c.dependsOnData ? 'Depende de datos que solo se conocen al ejecutar' : 'Se puede evaluar con los valores de entrada'}">${esc(c.text)}</code>`).join('')}</div>`
+      : (step.depth === 0 && ACTION_KINDS.has(step.kind) ? '<div class="flow-conds"><span>Siempre se ejecuta si el flujo llega hasta aquí.</span></div>' : '');
+    const op = step.operation && step.operation !== 'validación' ? `<span class="flow-op">${esc(step.operation)}</span>` : '';
+    const validation = step.operation === 'validación' ? '<span class="badge info">validación</span>' : '';
     return `
     <li class="flow-step" data-step="${step.id}" data-kind="${esc(step.kind)}" style="--d:${step.depth}">
-      <div class="flow-step-head">
-        <span class="flow-step-order" data-order></span>
-        <span class="kind kind-${esc(step.kind)}">${esc(KIND_BADGE[step.kind] ?? step.kind)}</span>
-        <span class="flow-step-title">${esc(step.title)}</span>${badge}
-        <span class="flow-step-line" title="Línea del código del procedimiento">línea ${step.line}</span>
-        <span class="status" data-status></span>
+      <span class="flow-step-icon" aria-hidden="true">${KIND_ICON[step.kind] ?? '•'}</span>
+      <div class="flow-step-body">
+        <div class="flow-step-head">
+          <span class="flow-step-order" data-order></span>
+          <span class="kind kind-${esc(step.kind)}" title="${esc(KIND_HELP[step.kind] ?? '')}">${esc(KIND_BADGE[step.kind] ?? step.kind)}</span>
+          ${op}${validation}
+          <span class="flow-step-line" title="Línea del código del procedimiento">línea ${step.line}</span>
+          <span class="status" data-status></span>
+        </div>
+        <div class="flow-step-title">${esc(step.title)}</div>
+        ${targets ? `<div class="flow-step-targets">${targets}</div>` : ''}${args}${conds}
       </div>
-      ${targets ? `<div class="flow-step-targets">${targets}</div>` : ''}${args}
     </li>`;
   }).join('');
 
   container.innerHTML = `
     <div class="flow-panel">
-      <h3>Datos de entrada · ${esc(report.schema)}.${esc(report.name)}</h3>
+      <div class="flow-title">
+        <span class="flow-eyebrow">Datos de entrada</span>
+        <h3>${esc(report.schema)}.${esc(report.name)}</h3>
+      </div>
       ${report.warnings.map((w) => `<div class="msg warn">${esc(w)}</div>`).join('')}
+      <div class="flow-stats">${stats}</div>
 
-      <h4>Qué hace este procedimiento</h4>
-      <ul class="flow-summary">${summary}</ul>
-      <details class="flow-how">
-        <summary>Cómo funciona este panel</summary>
-        <ol>
-          <li>El panel lee el código del procedimiento; no ejecuta nada en la base de datos.</li>
-          <li>Usted escribe valores de entrada y el panel evalúa, sobre las condiciones del código, qué pasos se ejecutarían y en qué orden.</li>
-          <li>Lo que depende de datos de tablas, variables o funciones se marca como «Depende de datos»: no se puede saber sin ejecutar.</li>
-          <li>«Simular y marcar en la red» anima ese recorrido sobre el grafo.</li>
-        </ol>
-      </details>
+      <section class="flow-card">
+        <h4>Qué hace este procedimiento</h4>
+        <p class="flow-lead">${esc(describeProcedure(report)[0])}</p>
+        <dl class="flow-facts">
+          <div><dt>Lee</dt><dd>${chipList(info.reads, 'read')}</dd></div>
+          <div><dt>Modifica</dt><dd>${chipList(info.writes, 'write')}</dd></div>
+          <div><dt>Llama a</dt><dd>${chipList(info.calls, 'exec')}</dd></div>
+        </dl>
+        ${notes.length ? `<ul class="flow-alerts">${notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}
+        <details class="flow-how">
+          <summary>Cómo funciona este panel</summary>
+          <ol>
+            <li>Lee el código del procedimiento; no ejecuta nada en la base de datos.</li>
+            <li>Tú escribes valores de entrada y el panel evalúa las condiciones del código para decir qué pasos se ejecutarían y en qué orden.</li>
+            <li>Lo que depende de datos de tablas, variables o funciones se marca como «Depende de datos»: no se puede saber sin ejecutar.</li>
+            <li>«Simular y marcar en la red» anima ese recorrido sobre el grafo.</li>
+          </ol>
+        </details>
+      </section>
 
-      <h4>1 · Entradas</h4>
-      ${report.parameters.length === 0
+      <section class="flow-card">
+        <h4><span class="flow-num">1</span> Entradas</h4>
+        ${report.parameters.length === 0
       ? '<div class="muted-block">Este procedimiento no recibe parámetros.</div>'
-      : `<p class="muted">Use <code>NULL</code> para nulo; vacío = sin dato (se usa el valor por defecto si lo tiene).</p>
-         <table class="flow-params"><thead><tr><th>Parámetro</th><th>Tipo</th><th></th><th>Valor</th></tr></thead><tbody>${paramRows}</tbody></table>`}
-      ${scenarios.length ? `<label class="flow-check">Cargar un ejemplo
-        <select data-scenario><option value="">— elegir —</option>${scenarioOptions}</select></label>` : ''}
+      : `<p class="muted">Escribe <code>NULL</code> para nulo. Vacío significa «sin dato».</p>
+         <div class="flow-params">${paramCards}</div>`}
+        ${scenarios.length ? `<div class="flow-scenarios"><span>Probar con un ejemplo:</span>${scenarioChips}</div>` : ''}
+      </section>
 
-      <h4>2 · Flujo paso a paso</h4>
-      <p class="muted flow-legend">Orden del código. Lo que tiene sangría depende de la decisión que lo contiene. El número indica el orden en que se ejecutaría con estos valores.</p>
-      ${steps.length ? `<ol class="flow-steps">${stepRows}</ol>` : '<div class="muted-block">No se encontraron pasos que mostrar.</div>'}
-      <div class="actions"><button type="button" class="btn primary small" data-simulate ${steps.some((s) => MARKABLE_KINDS.has(s.kind)) ? '' : 'disabled'}>Simular y marcar en la red</button></div>
+      <section class="flow-card">
+        <h4><span class="flow-num">2</span> Flujo paso a paso</h4>
+        <div class="flow-outcome" data-outcome hidden></div>
+        <div class="flow-toolbar">
+          <label class="flow-check"><input type="checkbox" data-only-active> Mostrar solo lo que se ejecutaría</label>
+          <span class="flow-legend-inline"><i class="dot yes"></i>se ejecuta <i class="dot maybe"></i>depende de datos <i class="dot no"></i>no</span>
+        </div>
+        ${steps.length ? `<ol class="flow-steps">${stepRows}</ol>` : '<div class="muted-block">No se encontraron pasos que mostrar.</div>'}
+        <div class="actions"><button type="button" class="btn primary small" data-simulate ${steps.some((s) => MARKABLE_KINDS.has(s.kind)) ? '' : 'disabled'}>Simular y marcar en la red</button></div>
+      </section>
 
       <details class="flow-details">
         <summary>Script opcional para validar en SSMS</summary>
@@ -359,6 +428,21 @@ export function mountInputsPanel(container, report, { escapeHtml, onSimulate, on
   };
   const anyValue = () => Object.values(readValues()).some((v) => v.trim() !== '');
 
+  const outcomeBox = container.querySelector('[data-outcome]');
+  const onlyActive = container.querySelector('[data-only-active]');
+
+  const describeOutcome = (outcome) => {
+    const list = steps.map((step) => ({ step, ...outcome.get(step.id) }));
+    const actions = list.filter((i) => ACTION_KINDS.has(i.step.kind));
+    const yes = actions.filter((i) => i.status === 'yes').length;
+    const maybe = actions.filter((i) => i.status === 'maybe').length;
+    const stop = list.find((i) => i.status === 'yes' && (i.step.kind === 'return' || i.step.kind === 'throw'));
+    const parts = [`<b>${yes}</b> paso${yes === 1 ? '' : 's'} se ejecutaría${yes === 1 ? '' : 'n'}`];
+    if (maybe) parts.push(`<b>${maybe}</b> depende${maybe === 1 ? '' : 'n'} de datos`);
+    if (stop) parts.push(`termina en la <b>línea ${stop.step.line}</b>: ${esc(stop.step.title)}`);
+    return parts.join(' · ');
+  };
+
   const refresh = () => {
     const values = readValues();
     const active = anyValue();
@@ -368,10 +452,13 @@ export function mountInputsPanel(container, report, { escapeHtml, onSimulate, on
       const info = outcome?.get(step.id);
       const status = info?.status ?? 'none';
       row.dataset.state = status;
+      row.hidden = Boolean(onlyActive.checked && outcome && status === 'no');
       const labels = BRANCH_KINDS.has(step.kind) ? BRANCH_STATUS_LABEL : (step.kind === 'decision' || step.kind === 'try') ? CONTAINER_STATUS_LABEL : STATUS_LABEL;
       row.querySelector('[data-status]').textContent = labels[status];
       row.querySelector('[data-order]').textContent = info?.order ? `#${info.order}` : '';
     });
+    outcomeBox.hidden = !outcome;
+    if (outcome) outcomeBox.innerHTML = describeOutcome(outcome);
   };
 
   const script = container.querySelector('[data-script]');
@@ -387,24 +474,34 @@ export function mountInputsPanel(container, report, { escapeHtml, onSimulate, on
     container.querySelectorAll('[data-param]').forEach((input) => { input.value = values[input.dataset.param] ?? ''; });
   };
 
-  if (scenarios[0]) fill(scenarios[0].values);
+  if (scenarios[0]) {
+    fill(scenarios[0].values);
+    container.querySelector('[data-scenario-pick="0"]')?.setAttribute('aria-pressed', 'true');
+  }
 
   container.addEventListener('input', (event) => {
-    if (event.target.matches('[data-param]')) mode.value = 'current';
+    if (event.target.matches('[data-param]')) {
+      mode.value = 'current';
+      container.querySelectorAll('[data-scenario-pick]').forEach((b) => b.setAttribute('aria-pressed', 'false'));
+    }
     refreshAll();
   });
 
   container.addEventListener('change', (event) => {
-    const select = event.target.closest('[data-scenario]');
-    if (!select || select.value === '') return;
-    fill(scenarios[Number(select.value)].values);
-    mode.value = 'current';
-    refreshAll();
+    if (event.target.matches('[data-only-active]')) refresh();
   });
 
   container.addEventListener('click', (event) => {
     const target = event.target.closest('[data-target]');
     if (target) onPickTarget?.(target.dataset.target);
+
+    const pick = event.target.closest('[data-scenario-pick]');
+    if (pick) {
+      fill(scenarios[Number(pick.dataset.scenarioPick)].values);
+      container.querySelectorAll('[data-scenario-pick]').forEach((b) => b.setAttribute('aria-pressed', String(b === pick)));
+      mode.value = 'current';
+      refreshAll();
+    }
 
     if (event.target.closest('[data-download]')) {
       const blob = new Blob([script.textContent], { type: 'text/plain;charset=utf-8' });
